@@ -162,6 +162,20 @@ export class ApiClient {
     });
   }
 
+  async sendPTZTour(cameraId: string, action = 'start', tour_id = 'tour_perimeter_360', presets?: string[]) {
+    return this.request(`/cameras/${cameraId}/ptz/tour`, {
+      method: 'POST',
+      body: JSON.stringify({ action, tour_id, presets })
+    });
+  }
+
+  async sendRadioPTT(channel = 1, message = 'پیام بی‌سیم گشت حراست', sender?: string) {
+    return this.request('/radio/ptt', {
+      method: 'POST',
+      body: JSON.stringify({ channel, message, sender })
+    });
+  }
+
   // Camera Discovery
   async discoverCameras(agent_id = 'agent-mini-01', subnet = '192.168.1') {
     return this.request('/cameras/discover', {

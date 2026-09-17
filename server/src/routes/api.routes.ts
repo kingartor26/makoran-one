@@ -325,6 +325,36 @@ apiRouter.post('/agents/:id/broadcast', (req: AuthenticatedRequest, res) => {
   res.json({ success: dispatched, message, zone });
 });
 
+// Digital Walkie-Talkie Push-to-Talk (PTT) Transmission
+apiRouter.post('/radio/ptt', (req: AuthenticatedRequest, res) => {
+  const { channel, message, sender } = req.body;
+  const now = new Date().toISOString();
+  const targetChannel = channel || 1;
+  const senderName = sender || req.user?.email || 'مرکز مانیتورینگ مکران';
+
+  const agents = agentService.getAllAgents(req.tenantId!);
+  for (const ag of agents) {
+    agentService.sendCommand(ag.id, {
+      command: 'radio_ptt',
+      parameters: {
+        channel: targetChannel,
+        sender: senderName,
+        message: message || 'ارتباط تست بی‌سیم گشت حراست'
+      },
+      issued_at: now
+    });
+  }
+
+  agentService.broadcastToClients('radio_transmission', {
+    channel: targetChannel,
+    sender: senderName,
+    message: message || 'ارتباط تست بی‌سیم گشت حراست',
+    timestamp: now
+  });
+
+  res.json({ success: true, channel: targetChannel, sender: senderName, timestamp: now });
+});
+
 // --- CAMERAS ---
 apiRouter.get('/cameras', (req: AuthenticatedRequest, res) => {
   const cameras = dbService.query('SELECT * FROM cameras WHERE tenant_id = ? ORDER BY created_at DESC', [req.tenantId]);
@@ -363,6 +393,31 @@ apiRouter.post('/cameras/:id/ptz', (req: AuthenticatedRequest, res) => {
   });
 
   res.json({ success: dispatched, action, camera_id: id });
+});
+
+// Automated PTZ Tour & Patrol Routine
+apiRouter.post('/cameras/:id/ptz/tour', (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  const { action, tour_id, presets } = req.body;
+
+  const camera = dbService.queryOne('SELECT * FROM cameras WHERE id = ? AND tenant_id = ?', [id, req.tenantId]);
+  if (!camera) {
+    res.status(404).json({ error: 'دوربین مداربسته یافت نشد' });
+    return;
+  }
+
+  const dispatched = agentService.sendCommand(camera.agent_id, {
+    command: 'ptz_tour' as any,
+    channel_id: id,
+    parameters: {
+      action: action || 'start',
+      tour_id: tour_id || 'tour_perimeter_360',
+      presets: presets || ['preset_01', 'preset_02', 'preset_03']
+    },
+    issued_at: new Date().toISOString()
+  });
+
+  res.json({ success: dispatched, camera_id: id, action: action || 'start' });
 });
 
 // --- CAMERA DISCOVERY ---

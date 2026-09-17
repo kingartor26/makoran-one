@@ -7,7 +7,8 @@ import {
   Camera as CamIcon, Terminal, ExternalLink, Settings, Layers,
   ChevronRight, Sparkles, Building, Lock, Unlock, Zap, Download,
   Clock, Thermometer, Lightbulb, ShoppingBag, ShoppingCart, CheckCircle,
-  MapPin, ClipboardList, Database, Map, BarChart3, Volume2, Megaphone
+  MapPin, ClipboardList, Database, Map, BarChart3, Volume2, Megaphone,
+  Mic, Copy, Code2
 } from 'lucide-react';
 import { api } from './api';
 import {
@@ -93,6 +94,13 @@ export function App() {
   const [aiStudioCamera, setAiStudioCamera] = useState('cam-01');
   const [aiStudioPriority, setAiStudioPriority] = useState<'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW'>('CRITICAL');
   const [aiCustomImage, setAiCustomImage] = useState<string | null>(null);
+  const [showRadioModal, setShowRadioModal] = useState(false);
+  const [radioChannel, setRadioChannel] = useState(1);
+  const [radioMessage, setRadioMessage] = useState('مرکز مانیتورینگ به کلیه گشت‌ها: وضعیت فنس و گیت‌ها عادی گزارش شد.');
+  const [radioTransmitting, setRadioTransmitting] = useState(false);
+  const [activePtzTours, setActivePtzTours] = useState<Record<string, boolean>>({});
+  const [apiDocSearch, setApiDocSearch] = useState('');
+  const [selectedApiTag, setSelectedApiTag] = useState('ALL');
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [otaDeploying, setOtaDeploying] = useState(false);
@@ -836,6 +844,34 @@ export function App() {
     }
   };
 
+  // Digital Walkie-Talkie Push-to-Talk (PTT)
+  const handleRadioPTT = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setRadioTransmitting(true);
+    try {
+      await api.sendRadioPTT(radioChannel, radioMessage, user?.fullName || 'مرکز مانیتورینگ مکران');
+      showToast(`پیام رادیویی روی کانال [CH-0${radioChannel}] به بی‌سیم گشت مخابره شد`, 'success');
+      setShowRadioModal(false);
+    } catch (err: any) {
+      showToast(err.message || 'خطا در ارسال پیام بی‌سیم', 'error');
+    } finally {
+      setRadioTransmitting(false);
+    }
+  };
+
+  // Toggle Automated PTZ Patrol Tour
+  const handleTogglePTZTour = async (cameraId: string) => {
+    const isCurrentlyTouring = !!activePtzTours[cameraId];
+    const newAction = isCurrentlyTouring ? 'stop' : 'start';
+    try {
+      await api.sendPTZTour(cameraId, newAction);
+      setActivePtzTours(prev => ({ ...prev, [cameraId]: !isCurrentlyTouring }));
+      showToast(`گشت‌زنی خودکار ۳۶۰ درجه دوربین ${cameraId} ${newAction === 'start' ? 'آغاز شد' : 'متوقف گردید'}`, 'info');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
   // Search Face Sightings
   const handleSearchFace = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1349,7 +1385,15 @@ export function App() {
                 </button>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setShowRadioModal(true)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#141824] hover:bg-blue-600 hover:text-white border border-blue-500/40 text-blue-300 transition flex items-center gap-1.5 shadow whitespace-nowrap"
+                >
+                  <Radio className="w-4 h-4 text-blue-400" />
+                  <span>بی‌سیم دیجیتال گشت (PTT)</span>
+                </button>
+
                 <button
                   onClick={() => setShowVoiceModal(true)}
                   className="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500 hover:text-black border border-amber-500/40 text-amber-300 transition flex items-center gap-1.5 shadow whitespace-nowrap"
@@ -1500,6 +1544,18 @@ export function App() {
                         </div>
 
                         <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleTogglePTZTour(cam.id)}
+                            title="گشت‌زنی خودکار ۳۶۰ درجه دوربین (PTZ Tour)"
+                            className={`p-2 rounded-xl border text-xs transition ${
+                              activePtzTours[cam.id]
+                                ? 'bg-blue-600/30 border-blue-500 text-blue-300'
+                                : 'bg-[#171B26] hover:bg-[#202534] border-slate-700 text-slate-300'
+                            }`}
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 ${activePtzTours[cam.id] ? 'animate-spin text-blue-400' : ''}`} />
+                          </button>
+
                           <button
                             onClick={() => triggerAISimulation('human_detected', cam.id)}
                             title="شبیه‌سازی رویداد و ارسال اسنپ‌شات به هوش مصنوعی"
@@ -4523,6 +4579,123 @@ export function App() {
                 </div>
               </div>
             </div>
+
+            {/* API & DEVELOPER INTEGRATION HUB (OpenAPI 3.0 Explorer) */}
+            <div className="space-y-4 pt-4 border-t border-slate-800">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Code2 className="w-4 h-4 text-[#D4AF37]" />
+                    <span>مرکز وب‌سرویس و توسعه‌دهندگان (API & Developer Integration Hub)</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    مستندات استاندارد OpenAPI 3.0، توکن‌های احراز هویت و نمونه فراخوانی cURL جهت اتصال سامانه‌های ERP و حراست کل.
+                  </p>
+                </div>
+
+                <a
+                  href="/api/v1/docs"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3.5 py-1.5 rounded-xl bg-[#171B26] hover:bg-[#202534] border border-[#D4AF37]/40 text-[#ECC665] text-xs font-bold transition flex items-center gap-1.5 shadow"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>مشاهده خام OpenAPI JSON</span>
+                </a>
+              </div>
+
+              {/* API Credentials & Base URL Box */}
+              <div className="bg-[#0F1118] border border-slate-800 rounded-2xl p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono-num">
+                <div className="bg-[#141722] p-3 rounded-xl border border-slate-800">
+                  <div className="text-slate-400 text-[11px] font-sans">نشانی پایه وب‌سرویس (API Base URL):</div>
+                  <div className="font-bold text-[#ECC665] mt-1 text-sm select-all">http://localhost:3000/api/v1</div>
+                  <div className="text-[10px] text-slate-500 font-sans mt-0.5">پروتکل امن TLS / JSON REST API</div>
+                </div>
+
+                <div className="bg-[#141722] p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+                  <div className="overflow-hidden">
+                    <div className="text-slate-400 text-[11px] font-sans">کلید فعال Bearer JWT:</div>
+                    <div className="font-bold text-white mt-1 text-xs truncate max-w-xs select-all">
+                      {token ? `${token.substring(0, 24)}...${token.substring(token.length - 8)}` : 'توکن نامعتبر'}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (token) {
+                        navigator.clipboard.writeText(token);
+                        showToast('توکن احراز هویت در کلیپ‌بورد کپی شد', 'success');
+                      }
+                    }}
+                    className="p-2 rounded-lg bg-[#1B202E] hover:bg-[#D4AF37] hover:text-black text-slate-300 transition flex items-center gap-1 text-[11px] font-sans"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>کپی توکن</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Endpoints Catalog Explorer */}
+              <div className="bg-[#0F1118] border border-slate-800 rounded-2xl p-4 space-y-3">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-3 border-b border-slate-800">
+                  <span className="text-xs font-bold text-white">کاتالوگ اندپوینت‌های تجاری مکران گارد (Commercial REST Endpoints)</span>
+                  <input
+                    type="text"
+                    placeholder="جستجو در مسیرها و متدها..."
+                    value={apiDocSearch}
+                    onChange={e => setApiDocSearch(e.target.value)}
+                    className="px-3 py-1.5 rounded-lg bg-[#141722] border border-slate-700 text-white text-xs w-full sm:w-64"
+                  />
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  {[
+                    { method: 'POST', path: '/auth/login', tag: 'Auth', desc: 'احراز هویت کاربر و صدور JWT توکن سازمانی' },
+                    { method: 'GET', path: '/guard/state', tag: 'Guard', desc: 'دریافت وضعیت برخط سیستم دزدگیر، آژیر و رله‌ها' },
+                    { method: 'POST', path: '/guard/arm', tag: 'Guard', desc: 'تغییر وضعیت امنیتی دزدگیر (مسلح، غیرمسلح، وحشت)' },
+                    { method: 'POST', path: '/ai/process', tag: 'AI', desc: 'ارسال تصویر به درگاه هوش مصنوعی با اولویت‌بندی صف' },
+                    { method: 'POST', path: '/webrtc/request', tag: 'Live', desc: 'درخواست برقراری استریم زنده WebRTC بر اساس تقاضا' },
+                    { method: 'POST', path: '/agents/:id/broadcast', tag: 'Audio', desc: 'پیجینگ و پخش پیام صوتی بازدارنده روی بلندگوی مینی‌پی‌سی' },
+                    { method: 'POST', path: '/radio/ptt', tag: 'Radio', desc: 'مخابره پیام صوتی بی‌سیم دیجیتال گشت حراست (DMR PTT)' },
+                    { method: 'POST', path: '/cameras/:id/ptz/tour', tag: 'CCTV', desc: 'شروع و توقف گشت‌زنی خودکار ۳۶۰ درجه دوربین PTZ' },
+                    { method: 'GET', path: '/incidents', tag: 'Incidents', desc: 'فهرست پرونده‌های نفوذ، تیکت‌ها و اعزام‌های گشت' },
+                    { method: 'POST', path: '/incidents', tag: 'Incidents', desc: 'صدور تیکت و دستور اعزام فوری گشت واکنش سریع' },
+                    { method: 'GET', path: '/system/backup', tag: 'Backup', desc: 'دانلود نسخه پشتیبان کامل رمزنگاری‌شده (AES-256)' },
+                    { method: 'GET', path: '/docs', tag: 'Docs', desc: 'مشخصات استاندارد قرارداد تعاملی OpenAPI 3.0.3' }
+                  ]
+                    .filter(item => !apiDocSearch || item.path.includes(apiDocSearch) || item.desc.includes(apiDocSearch))
+                    .map((ep, idx) => (
+                      <div key={idx} className="bg-[#121520] p-2.5 rounded-xl border border-slate-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 hover:border-slate-700 transition">
+                        <div className="flex items-center gap-2 font-mono-num">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            ep.method === 'GET' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' :
+                            ep.method === 'POST' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
+                            ep.method === 'PATCH' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
+                            'bg-red-500/20 text-red-300'
+                          }`}>
+                            {ep.method}
+                          </span>
+                          <span className="text-white font-bold text-xs">{ep.path}</span>
+                          <span className="text-slate-500 text-[10px]">({ep.tag})</span>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <span className="text-slate-400 text-[11px]">{ep.desc}</span>
+                          <button
+                            onClick={() => {
+                              const curlStr = `curl -X ${ep.method} "http://localhost:3000/api/v1${ep.path}" -H "Authorization: Bearer ${token || 'TOKEN'}" -H "Content-Type: application/json"`;
+                              navigator.clipboard.writeText(curlStr);
+                              showToast('دستور cURL در کلیپ‌بورد کپی شد', 'success');
+                            }}
+                            className="text-[10px] bg-[#181C28] hover:bg-[#D4AF37] hover:text-black px-2 py-1 rounded text-slate-300 border border-slate-700 transition whitespace-nowrap"
+                          >
+                            کپی cURL
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -4773,6 +4946,93 @@ export function App() {
                   <button type="submit" className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold flex items-center gap-1.5 shadow">
                     <Volume2 className="w-4 h-4" />
                     <span>مخابره فوری صوت به سایت</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* DIGITAL WALKIE-TALKIE PUSH-TO-TALK (PTT) MODAL */}
+        {showRadioModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="bg-[#101422] border border-blue-500/50 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-200">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Radio className="w-5 h-5 text-blue-400" />
+                  <span className="font-bold text-sm text-white">سامانه بی‌سیم دیجیتال گشت حراست (Digital Radio PTT)</span>
+                </div>
+                <button onClick={() => setShowRadioModal(false)} className="text-slate-400 hover:text-white">✕</button>
+              </div>
+
+              {/* Radio Frequency Channel Selector */}
+              <div className="bg-[#161B2E] p-3.5 rounded-xl border border-slate-700 space-y-2">
+                <span className="text-slate-400 text-xs font-bold block">کانال فرکانسی بی‌سیم (DMR Frequency Channel):</span>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  {[
+                    { id: 1, name: 'CH-01: گشت فنس پیرامونی' },
+                    { id: 2, name: 'CH-02: گیت اصلی و تردد' },
+                    { id: 3, name: 'CH-03: انبار و اتاق سرور' },
+                    { id: 4, name: 'CH-04: کانال اضطراری سراسری' }
+                  ].map(ch => (
+                    <button
+                      key={ch.id}
+                      type="button"
+                      onClick={() => setRadioChannel(ch.id)}
+                      className={`p-2 rounded-lg border text-right transition font-mono-num text-[11px] ${
+                        radioChannel === ch.id
+                          ? 'bg-blue-600 border-blue-400 text-white font-bold shadow'
+                          : 'bg-[#1D2338] border-slate-700 text-slate-300 hover:bg-[#252D48]'
+                      }`}
+                    >
+                      {ch.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick Preset Transmissions */}
+              <div className="space-y-1.5 text-xs">
+                <span className="text-slate-400 font-bold block">پیام‌های تاکتیکی آماده:</span>
+                <div className="grid grid-cols-1 gap-1">
+                  {[
+                    'مرکز به گشت ۱: وضعیت پیرامون زون شرقی را بررسی و موقعیت را گزارش کنید.',
+                    'مرکز به کلیه واحدها: تردد خودرو مشکوک در گیت ورودی ثبت شد، در حالت آماده‌باش باشید.',
+                    'پایان عملیات: وضعیت سایت امن است، به پست‌های اصلی بازگردید.'
+                  ].map((preset, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setRadioMessage(preset)}
+                      className="p-1.5 rounded-lg bg-[#151928] hover:bg-[#1E243A] border border-slate-800 text-slate-300 text-[10px] text-right transition"
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <form onSubmit={handleRadioPTT} className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-slate-400 mb-1">متن مخابره رادیویی (PTT Message)</label>
+                  <textarea
+                    rows={2}
+                    value={radioMessage}
+                    onChange={e => setRadioMessage(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[#161B2E] border border-slate-700 text-white"
+                    required
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                  <button type="button" onClick={() => setShowRadioModal(false)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300">انصراف</button>
+                  <button
+                    type="submit"
+                    disabled={radioTransmitting}
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold flex items-center gap-2 shadow-lg transition"
+                  >
+                    <Mic className="w-4 h-4 text-white animate-pulse" />
+                    <span>{radioTransmitting ? 'درحال مخابره...' : 'فشار و صحبت (PTT Transmit)'}</span>
                   </button>
                 </div>
               </form>

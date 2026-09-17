@@ -56,6 +56,22 @@ export class CommandExecutor {
         return { success: true, result: `PTZ action ${action} executed on ${cmd.channel_id}` };
       }
 
+      case 'ptz_tour': {
+        const action = cmd.parameters?.action || 'start'; // start, stop
+        const tourId = cmd.parameters?.tour_id || 'tour_perimeter_360';
+        const presets = cmd.parameters?.presets || ['preset_gate', 'preset_fence_east', 'preset_tank_yard'];
+        console.log(`[CCTV PTZ Tour] Camera ${cmd.channel_id} ${action === 'start' ? 'STARTED' : 'STOPPED'} automated tour [${tourId}] across presets: ${presets.join(', ')}`);
+        return { success: true, result: `PTZ Tour ${tourId} ${action}ed on ${cmd.channel_id}` };
+      }
+
+      case 'radio_ptt': {
+        const channel = cmd.parameters?.channel || 1;
+        const sender = cmd.parameters?.sender || 'مرکز کنترل و مانیتورینگ';
+        const message = cmd.parameters?.message || 'ارتباط تست بی‌سیم گشت';
+        console.log(`[Digital Radio PTT] 📻 Channel [CH-0${channel}] Transmission from [${sender}]: "${message}"`);
+        return { success: true, result: `Radio PTT transmission on CH-0${channel} successful` };
+      }
+
       case 'ota_update': {
         const version = cmd.parameters?.version || '1.3.0';
         const checksum = cmd.parameters?.checksum || 'sha256:valid';

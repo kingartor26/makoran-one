@@ -76,6 +76,8 @@ export type AgentCommandType =
   | 'capture_snapshot' 
   | 'discover_cameras'
   | 'ptz_command'
+  | 'ptz_tour'
+  | 'radio_ptt'
   | 'voice_broadcast'
   | 'reboot' 
   | 'update_config' 

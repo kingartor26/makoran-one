@@ -204,8 +204,50 @@ async function runEnterpriseScaleTests() {
     process.exit(1);
   }
 
+  // 10. Automated PTZ Patrol Tour
+  try {
+    const tourRes = await fetch(`${BASE_URL}/cameras/cam-01/ptz/tour`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        action: 'start',
+        tour_id: 'tour_perimeter_360',
+        presets: ['preset_gate_01', 'preset_fence_east', 'preset_tank_yard']
+      })
+    });
+    const tourData = await tourRes.json();
+    if (!tourData.success || tourData.action !== 'start') {
+      throw new Error('Failed to start automated PTZ tour: ' + JSON.stringify(tourData));
+    }
+    console.log(`✓ Stage 10: Automated 360-degree PTZ Tour launched on camera: ${tourData.camera_id}`);
+  } catch (err) {
+    console.error('✗ Stage 10 failed:', err);
+    process.exit(1);
+  }
+
+  // 11. Digital Walkie-Talkie DMR Radio Transmission
+  try {
+    const radioRes = await fetch(`${BASE_URL}/radio/ptt`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        channel: 1,
+        sender: 'ستوان محمدی (مرکز مانیتورینگ)',
+        message: 'کلیه گشت‌ها: وضعیت فنس و گیت‌ها عادی گزارش شد.'
+      })
+    });
+    const radioData = await radioRes.json();
+    if (!radioData.success || radioData.channel !== 1) {
+      throw new Error('Failed to dispatch radio transmission: ' + JSON.stringify(radioData));
+    }
+    console.log(`✓ Stage 11: Digital Walkie-Talkie PTT Transmission sent on Channel [CH-0${radioData.channel}]`);
+  } catch (err) {
+    console.error('✗ Stage 11 failed:', err);
+    process.exit(1);
+  }
+
   console.log('\n===========================================================');
-  console.log(' ALL 9 ENTERPRISE INTEGRATION STAGES PASSED SUCCESSFULLY!');
+  console.log(' ALL 11 ENTERPRISE INTEGRATION STAGES PASSED SUCCESSFULLY!');
   console.log('===========================================================');
 }
 
