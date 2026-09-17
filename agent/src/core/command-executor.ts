@@ -1,18 +1,27 @@
 import { AgentActionCommand } from '@makoran/shared';
 import { OTAUpdater } from './ota-updater';
+import { CameraDiscoveryService } from './camera-discovery';
 
 export class CommandExecutor {
   private activeRelays = new Map<number, NodeJS.Timeout>();
   private otaUpdater: OTAUpdater;
+  private discoveryService: CameraDiscoveryService;
 
   constructor(otaUpdater: OTAUpdater) {
     this.otaUpdater = otaUpdater;
+    this.discoveryService = new CameraDiscoveryService();
   }
 
   public async execute(cmd: AgentActionCommand): Promise<{ success: boolean; result?: any }> {
     console.log(`[CommandExecutor] >>> Executing command: ${cmd.command}`, cmd);
 
     switch (cmd.command) {
+      case 'discover_cameras' as any: {
+        const subnet = cmd.parameters?.subnet || '192.168.1';
+        const cameras = await this.discoveryService.discover(subnet);
+        return { success: true, result: cameras };
+      }
+
       case 'trigger_alarm':
       case 'trigger_relay': {
         const relayNum = cmd.relay || 1;

@@ -6,3 +6,7 @@ data/*.db
 updates/
 uploads/*
 !uploads/.gitkeep
+server/uploads/*
+!server/uploads/.gitkeep
+server/data/*.db
+

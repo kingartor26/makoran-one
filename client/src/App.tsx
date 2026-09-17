@@ -149,6 +149,10 @@ export function App() {
   const [showAddCamera, setShowAddCamera] = useState(false);
   const [showAddFace, setShowAddFace] = useState(false);
   const [showAddPlate, setShowAddPlate] = useState(false);
+  const [showAddRule, setShowAddRule] = useState(false);
+  const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
+  const [discoveredCams, setDiscoveredCams] = useState<any[]>([]);
+  const [discovering, setDiscovering] = useState(false);
   const [cartModal, setCartModal] = useState<ShopProductItem | null>(null);
 
   // Forms
@@ -156,6 +160,22 @@ export function App() {
   const [newFace, setNewFace] = useState({ name: '', category: 'VIP', phone: '', notes: '' });
   const [newPlate, setNewPlate] = useState({ plate_number: '', owner_name: '', category: 'ALLOWED', vehicle_model: '' });
   const [orderCustomer, setOrderCustomer] = useState({ name: '', phone: '' });
+  const [newRule, setNewRule] = useState({
+    name: '',
+    armed_away: true,
+    armed_stay: true,
+    human: true,
+    face: true,
+    plate: false,
+    zone_entrance: true,
+    zone_perimeter: true,
+    zone_vault: false,
+    trigger_alarm: true,
+    duration: 15,
+    send_push: true,
+    send_sms: true,
+    send_call: false
+  });
 
   // Banner message
   const [toast, setToast] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -455,6 +475,63 @@ export function App() {
       showToast(`سفارش خرید تجهیزات امنیتی با موفقیت ثبت گردید. پیش‌فاکتور صادر شد.`, 'success');
       const updated = await api.getShopOrders();
       setOrders(updated);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Auto-Discover Cameras
+  const handleDiscoverCameras = async () => {
+    setDiscovering(true);
+    setShowDiscoveryModal(true);
+    try {
+      showToast('در حال اسکن ساب‌نت شبکه محلی جهت کشف دوربین‌های ONVIF و RTSP...', 'info');
+      const res = await api.discoverCameras();
+      setDiscoveredCams(res.cameras || []);
+      showToast(`${res.cameras?.length || 0} تجهیز ویدئویی در شبکه کشف گردید`, 'success');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
+  // Create Security Rule
+  const handleCreateRule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const armed_states = [];
+      if (newRule.armed_away) armed_states.push('ARMED_AWAY');
+      if (newRule.armed_stay) armed_states.push('ARMED_STAY');
+
+      const event_types = [];
+      if (newRule.human) event_types.push('human_detected');
+      if (newRule.face) event_types.push('unknown_face');
+      if (newRule.plate) event_types.push('blocked_plate');
+
+      const zones = [];
+      if (newRule.zone_entrance) zones.push('entrance');
+      if (newRule.zone_perimeter) zones.push('perimeter');
+      if (newRule.zone_vault) zones.push('vault');
+
+      await api.addRule({
+        name: newRule.name || 'قانون امنیتی جدید',
+        armed_states,
+        event_types,
+        zones,
+        actions: {
+          trigger_alarm: newRule.trigger_alarm,
+          alarm_duration_sec: newRule.duration,
+          send_push: newRule.send_push,
+          send_sms: newRule.send_sms,
+          send_phone_call: newRule.send_call
+        }
+      });
+
+      setShowAddRule(false);
+      showToast('قانون امنیتی جدید با موفقیت فعال گردید', 'success');
+      const updated = await api.getRules();
+      setRules(updated);
     } catch (err: any) {
       showToast(err.message, 'error');
     }
@@ -1345,10 +1422,71 @@ export function App() {
                   </h3>
                   <p className="text-xs text-slate-400">پشتیبانی از پروتکل‌های استاندارد ONVIF و RTSP و برندهای داهوا (Dahua)، هایک‌ویژن (Hikvision) و ایکس‌ام‌آی (XMEye).</p>
                 </div>
-                <button onClick={() => setShowAddCamera(true)} className="px-3.5 py-1.5 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition flex items-center gap-1.5 shadow">
-                  <span>+ افزودن دوربین جدید</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDiscoverCameras}
+                    disabled={discovering}
+                    className="px-3.5 py-1.5 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-700 text-slate-200 text-xs font-semibold transition flex items-center gap-1.5 shadow"
+                  >
+                    {discovering ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5 text-[#D4AF37]" />}
+                    <span>{discovering ? 'در حال اسکن ساب‌نت...' : 'اسکن شبکه (Auto-Discover)'}</span>
+                  </button>
+                  <button onClick={() => setShowAddCamera(true)} className="px-3.5 py-1.5 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition flex items-center gap-1.5 shadow">
+                    <span>+ افزودن دستی</span>
+                  </button>
+                </div>
               </div>
+
+              {/* Discovery Results Modal */}
+              {showDiscoveryModal && (
+                <div className="bg-[#12151F] border border-[#D4AF37]/50 rounded-2xl p-6 shadow-2xl space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <Wifi className="w-4 h-4 text-[#D4AF37]" />
+                      <h4 className="text-sm font-bold text-white">تجهیزات کشف‌شده روی شبکه محلی مینی‌پی‌سی (ONVIF WS-Discovery)</h4>
+                    </div>
+                    <button onClick={() => setShowDiscoveryModal(false)} className="text-slate-400 hover:text-white">✕</button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {discoveredCams.map((dc, i) => (
+                      <div key={i} className="bg-[#171A24] p-3.5 rounded-xl border border-slate-700 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-white text-xs">{dc.manufacturer}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-[#ECC665] font-mono-num">{dc.protocol}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 font-mono-num mt-1">
+                            IP: {dc.ip}:{dc.port} • Model: {dc.model}
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-mono-num truncate mt-0.5">
+                            MAC: {dc.macAddress}
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            api.addCamera({
+                              name: `${dc.manufacturer} (${dc.ip})`,
+                              protocol: dc.protocol,
+                              zone: 'entrance',
+                              stream_url: dc.rtspUrl,
+                              channel_index: 1,
+                              agent_id: agents[0]?.id || 'agent-mini-01'
+                            });
+                            showToast(`دوربین ${dc.ip} با موفقیت به ماتریس نظارتی افزوده شد`, 'success');
+                            loadAllData();
+                            setShowDiscoveryModal(false);
+                          }}
+                          className="mt-3 py-1.5 px-3 rounded-lg bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition flex items-center justify-center gap-1"
+                        >
+                          <span>+ افزودن به مانیتورینگ</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {showAddCamera && (
                 <div className="bg-[#12151F] border border-[#D4AF37]/50 rounded-2xl p-6 shadow-2xl">
@@ -1660,7 +1798,114 @@ export function App() {
                   اگر (وضعیت سیستم == فعال) و (رویداد == انسان) در (زون == پیرامونی) رخ دهد → فعال‌سازی آژیر + ارسال پیامک و تماس خودکار.
                 </p>
               </div>
+              <button
+                onClick={() => setShowAddRule(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition flex items-center gap-1.5 shadow"
+              >
+                <span>+ ایجاد قانون امنیتی جدید</span>
+              </button>
             </div>
+
+            {/* Visual Rule Builder Modal */}
+            {showAddRule && (
+              <div className="bg-[#121520] border border-[#D4AF37]/50 rounded-2xl p-6 shadow-2xl">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+                  <h4 className="text-sm font-bold text-white">طراحی قانون امنیتی هوشمند (Visual Rule Builder)</h4>
+                  <button onClick={() => setShowAddRule(false)} className="text-slate-400 hover:text-white">✕</button>
+                </div>
+
+                <form onSubmit={handleCreateRule} className="space-y-4 text-xs">
+                  <div>
+                    <label className="block text-slate-400 mb-1">نام قانون</label>
+                    <input
+                      type="text"
+                      placeholder="مثال: نفوذ شبانه به محوطه انبار مرکزی"
+                      value={newRule.name}
+                      onChange={e => setNewRule({ ...newRule, name: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {/* Condition 1: Armed States */}
+                    <div className="bg-[#161925] p-3 rounded-xl border border-slate-800">
+                      <span className="font-bold text-[#ECC665] block mb-2">۱. وضعیت مسلح سیستم:</span>
+                      <label className="flex items-center gap-2 mb-1.5 text-slate-300 cursor-pointer">
+                        <input type="checkbox" checked={newRule.armed_away} onChange={e => setNewRule({ ...newRule, armed_away: e.target.checked })} />
+                        <span>فعال - خروج (Away)</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                        <input type="checkbox" checked={newRule.armed_stay} onChange={e => setNewRule({ ...newRule, armed_stay: e.target.checked })} />
+                        <span>فعال - در محل (Stay)</span>
+                      </label>
+                    </div>
+
+                    {/* Condition 2: Event Trigger */}
+                    <div className="bg-[#161925] p-3 rounded-xl border border-slate-800">
+                      <span className="font-bold text-[#ECC665] block mb-2">۲. رویداد هوش مصنوعی:</span>
+                      <label className="flex items-center gap-2 mb-1.5 text-slate-300 cursor-pointer">
+                        <input type="checkbox" checked={newRule.human} onChange={e => setNewRule({ ...newRule, human: e.target.checked })} />
+                        <span>تشخیص انسان (Human)</span>
+                      </label>
+                      <label className="flex items-center gap-2 mb-1.5 text-slate-300 cursor-pointer">
+                        <input type="checkbox" checked={newRule.face} onChange={e => setNewRule({ ...newRule, face: e.target.checked })} />
+                        <span>چهره ناشناس (Unknown)</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                        <input type="checkbox" checked={newRule.plate} onChange={e => setNewRule({ ...newRule, plate: e.target.checked })} />
+                        <span>پلاک مسدود (Blacklist)</span>
+                      </label>
+                    </div>
+
+                    {/* Condition 3: Zones */}
+                    <div className="bg-[#161925] p-3 rounded-xl border border-slate-800">
+                      <span className="font-bold text-[#ECC665] block mb-2">۳. زون تحت پوشش:</span>
+                      <label className="flex items-center gap-2 mb-1.5 text-slate-300 cursor-pointer">
+                        <input type="checkbox" checked={newRule.zone_entrance} onChange={e => setNewRule({ ...newRule, zone_entrance: e.target.checked })} />
+                        <span>ورودی اصلی (Entrance)</span>
+                      </label>
+                      <label className="flex items-center gap-2 mb-1.5 text-slate-300 cursor-pointer">
+                        <input type="checkbox" checked={newRule.zone_perimeter} onChange={e => setNewRule({ ...newRule, zone_perimeter: e.target.checked })} />
+                        <span>پیرامونی و دیوارها</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                        <input type="checkbox" checked={newRule.zone_vault} onChange={e => setNewRule({ ...newRule, zone_vault: e.target.checked })} />
+                        <span>خزانه و گاوصندوق</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Actions to Execute */}
+                  <div className="bg-[#161925] p-3 rounded-xl border border-slate-800">
+                    <span className="font-bold text-red-400 block mb-2">۴. فرامین و اقدامات خودکار در صورت احراز خطر:</span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                        <input type="checkbox" checked={newRule.trigger_alarm} onChange={e => setNewRule({ ...newRule, trigger_alarm: e.target.checked })} />
+                        <span className="font-bold text-red-400">تحریک رله و آژیر</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                        <input type="checkbox" checked={newRule.send_push} onChange={e => setNewRule({ ...newRule, send_push: e.target.checked })} />
+                        <span>ارسال اعلان Push</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                        <input type="checkbox" checked={newRule.send_sms} onChange={e => setNewRule({ ...newRule, send_sms: e.target.checked })} />
+                        <span>ارسال پیامک اضطراری</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                        <input type="checkbox" checked={newRule.send_call} onChange={e => setNewRule({ ...newRule, send_call: e.target.checked })} />
+                        <span>تماس صوتی خودکار</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button type="button" onClick={() => setShowAddRule(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300">انصراف</button>
+                    <button type="submit" className="px-5 py-2 rounded-xl bg-[#D4AF37] text-black font-bold">ذخیره و فعال‌سازی قانون</button>
+                  </div>
+                </form>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {rules.map(rule => {

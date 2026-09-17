@@ -148,6 +148,30 @@ export class ApiClient {
     });
   }
 
+  // Camera Discovery
+  async discoverCameras(agent_id = 'agent-mini-01', subnet = '192.168.1') {
+    return this.request('/cameras/discover', {
+      method: 'POST',
+      body: JSON.stringify({ agent_id, subnet })
+    });
+  }
+
+  // Privacy Compliance
+  async pruneBiometrics(retention_days = 30) {
+    return this.request('/privacy/prune', {
+      method: 'POST',
+      body: JSON.stringify({ retention_days })
+    });
+  }
+
+  // Test Notifications
+  async testNotification(channel = 'sms', recipient = '+989120000000', message = '') {
+    return this.request('/notifications/test', {
+      method: 'POST',
+      body: JSON.stringify({ channel, recipient, message })
+    });
+  }
+
   // AI & Snapshots
   async processAI(payload: { camera_id: string; agent_id?: string; event_type?: string; image_base64?: string }) {
     return this.request('/ai/process', {

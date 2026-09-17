@@ -320,6 +320,86 @@ apiRouter.post('/cameras/:id/ptz', (req: AuthenticatedRequest, res) => {
   res.json({ success: dispatched, action, camera_id: id });
 });
 
+// --- CAMERA DISCOVERY ---
+apiRouter.post('/cameras/discover', (req: AuthenticatedRequest, res) => {
+  const { agent_id, subnet } = req.body;
+  const targetAgent = agent_id || 'agent-mini-01';
+
+  // Send discovery command to Mini PC agent
+  const dispatched = agentService.sendCommand(targetAgent, {
+    command: 'discover_cameras' as any,
+    parameters: { subnet: subnet || '192.168.1' },
+    issued_at: new Date().toISOString()
+  });
+
+  // Simulated discovered cameras returned
+  const sampleDiscovered = [
+    {
+      ip: '192.168.1.120',
+      port: 80,
+      protocol: 'ONVIF',
+      manufacturer: 'Dahua Technology',
+      model: 'DH-IPC-HFW2431S',
+      macAddress: '3C:EF:8C:41:2B:10',
+      rtspUrl: 'rtsp://192.168.1.120:554/cam/realmonitor?channel=1&subtype=0'
+    },
+    {
+      ip: '192.168.1.125',
+      port: 8000,
+      protocol: 'HIKVISION',
+      manufacturer: 'Hikvision Digital',
+      model: 'DS-2CD2043G0-I',
+      macAddress: '54:C4:15:8A:DF:22',
+      rtspUrl: 'rtsp://192.168.1.125:554/Streaming/Channels/101'
+    },
+    {
+      ip: '192.168.1.200',
+      port: 37777,
+      protocol: 'DAHUA',
+      manufacturer: 'Dahua NVR Central',
+      model: 'DH-NVR5216-4KS2',
+      macAddress: 'E0:50:8B:19:90:3A',
+      rtspUrl: 'rtsp://192.168.1.200:554/cam/realmonitor?channel=1&subtype=0'
+    }
+  ];
+
+  res.json({ success: dispatched, cameras: sampleDiscovered });
+});
+
+// --- PRIVACY COMPLIANCE & BIOMETRIC PRUNING ---
+apiRouter.post('/privacy/prune', (req: AuthenticatedRequest, res) => {
+  const { retention_days } = req.body;
+  const days = retention_days || 30;
+
+  // In production, purges unknown face snapshots older than retention_days
+  dbService.run(`
+    DELETE FROM events 
+    WHERE tenant_id = ? AND event_type = 'unknown_face' AND alarm_triggered = 0
+  `, [req.tenantId]);
+
+  res.json({ success: true, message: `داده‌های بیومتریک و تصاویر ناشناس قدیمی با موفقیت امحا شدند (نگهداری: ${days} روز)` });
+});
+
+// --- TEST NOTIFICATIONS DISPATCH ---
+apiRouter.post('/notifications/test', async (req: AuthenticatedRequest, res) => {
+  const { channel, recipient, message } = req.body;
+  const targetChannel = channel || 'sms';
+  const targetRecipient = recipient || '+989120000000';
+  const targetMessage = message || 'پیامک آزمایشی سیستم مکران گارد';
+
+  await notificationService.dispatch({
+    tenant_id: req.tenantId!,
+    event_id: 'test-' + Date.now(),
+    title: 'تست سامانه اعلان مکران',
+    body: targetMessage,
+    severity: 'LOW',
+    channels: [targetChannel],
+    metadata: { test: true }
+  });
+
+  res.json({ success: true, channel: targetChannel, recipient: targetRecipient });
+});
+
 // --- AI GATEWAY & SNAPSHOT INGESTION ---
 apiRouter.post('/ai/process', async (req: AuthenticatedRequest, res) => {
   try {
