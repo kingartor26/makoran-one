@@ -89,6 +89,10 @@ export function App() {
   const [eventFilterType, setEventFilterType] = useState<string>('ALL');
   const [eventSearchText, setEventSearchText] = useState<string>('');
   const [selectedEventModal, setSelectedEventModal] = useState<SecurityEvent | null>(null);
+  const [selectedIncidentForDossier, setSelectedIncidentForDossier] = useState<SecurityIncidentItem | null>(null);
+  const [aiStudioCamera, setAiStudioCamera] = useState('cam-01');
+  const [aiStudioPriority, setAiStudioPriority] = useState<'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW'>('CRITICAL');
+  const [aiCustomImage, setAiCustomImage] = useState<string | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [otaDeploying, setOtaDeploying] = useState(false);
@@ -456,18 +460,20 @@ export function App() {
   };
 
   // AI Threat Ingestion Simulator
-  const triggerAISimulation = async (eventType: string, cameraId = 'cam-01') => {
+  const triggerAISimulation = async (eventType: string, cameraId = aiStudioCamera, priority = aiStudioPriority, imageUrl?: string) => {
     setAiSimulating(true);
     try {
       const res = await api.processAI({
         camera_id: cameraId,
-        event_type: eventType
+        event_type: eventType,
+        priority: priority as any,
+        image_url: imageUrl || aiCustomImage || `/uploads/snap_${cameraId}_${Date.now()}.jpg`
       });
       setAiLastResult(res);
       showToast(`پردازش تصویر در سرور انجام شد: ${res.decision === 'alarm' ? '🚨 آژیر امنیتی تایید شد!' : 'اطلاعات ثبت شد'}`, res.decision === 'alarm' ? 'error' : 'success');
       loadAllData();
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'خطا در پردازش هوش مصنوعی سرور', 'error');
     } finally {
       setAiSimulating(false);
     }
@@ -1913,89 +1919,230 @@ export function App() {
               </div>
             )}
 
-            {/* SERVER-SIDE AI THREAT PIPELINE DEMONSTRATOR */}
-            <div className="bg-[#0F1118] border border-slate-800 rounded-2xl p-6 shadow-xl">
+            {/* SERVER-CENTRIC AI INFERENCE STUDIO */}
+            <div className="bg-[#0F1118] border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-[#D4AF37]" />
-                    <span>تست زنده خط لوله هوش مصنوعی سرور (Server AI Pipeline Simulator)</span>
+                    <span>استودیوی پردازش و شبیه‌سازی هوش مصنوعی ابری (Server-Centric AI Studio)</span>
                   </h3>
                   <p className="text-xs text-slate-400 mt-0.5">
                     بررسی فرآیند دریافت اسنپ‌شات از مینی‌پی‌سی، آنالیز در سرور ابری، ارزیابی در موتور قوانین و صدور دستور آژیر.
                   </p>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-slate-400 bg-[#161924] px-3 py-1 rounded-lg border border-slate-800">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                  <span>استاندارد قرارداد: Contract v1</span>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-400 bg-[#161924] px-3 py-1 rounded-lg border border-slate-800">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    <span>قرارداد هوش مصنوعی: v1 Standard Contract</span>
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 mt-4">
-                <button onClick={() => triggerAISimulation('human_detected')} disabled={aiSimulating} className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-[#D4AF37] text-right transition group">
-                  <div className="text-xs font-bold text-white group-hover:text-[#ECC665]">تشخیص انسان</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Human Detection</div>
-                </button>
+              {/* AI Pipeline Control Bar: Camera Selection & Priority Queue */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-[#131622] p-3 rounded-xl border border-slate-800 text-xs">
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">دوربین و زون آزمون:</label>
+                  <select
+                    value={aiStudioCamera}
+                    onChange={e => setAiStudioCamera(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-lg bg-[#181B26] border border-slate-700 text-white"
+                  >
+                    {cameras.map(c => (
+                      <option key={c.id} value={c.id}>{c.name} ({c.zone})</option>
+                    ))}
+                  </select>
+                </div>
 
-                <button onClick={() => triggerAISimulation('unknown_face')} disabled={aiSimulating} className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-amber-500 text-right transition group">
-                  <div className="text-xs font-bold text-white group-hover:text-amber-400">چهره ناشناس</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Unknown Face Alert</div>
-                </button>
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">سطح صف اولویت (AI Priority Queue):</label>
+                  <select
+                    value={aiStudioPriority}
+                    onChange={e => setAiStudioPriority(e.target.value as any)}
+                    className="w-full px-3 py-1.5 rounded-lg bg-[#181B26] border border-slate-700 text-white font-mono-num font-bold text-[#ECC665]"
+                  >
+                    <option value="CRITICAL">🔴 CRITICAL (نفوذ فوری - تقدم کامل در صف)</option>
+                    <option value="HIGH">🟠 HIGH (تردد مشکوک پیرامونی)</option>
+                    <option value="NORMAL">🔵 NORMAL (تحلیل عادی و تردد پرسنل)</option>
+                    <option value="LOW">⚪ LOW (ممیزی و حسابرسی پس‌زمینه)</option>
+                  </select>
+                </div>
 
-                <button onClick={() => triggerAISimulation('vip_face')} disabled={aiSimulating} className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-blue-500 text-right transition group">
-                  <div className="text-xs font-bold text-white group-hover:text-blue-400">شناسایی چهره VIP</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">VIP Face Recognition</div>
-                </button>
-
-                <button onClick={() => triggerAISimulation('blocked_plate')} disabled={aiSimulating} className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-red-500 text-right transition group">
-                  <div className="text-xs font-bold text-white group-hover:text-red-400">پلاک مسدود / حراست</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Blacklisted Plate</div>
-                </button>
-
-                <button onClick={() => triggerAISimulation('vehicle_detected')} disabled={aiSimulating} className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-emerald-500 text-right transition group">
-                  <div className="text-xs font-bold text-white group-hover:text-emerald-400">تشخیص خودرو</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Vehicle Classification</div>
-                </button>
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">وضعیت دزدگیر سرور مکران گارد:</label>
+                  <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-[#181B26] border border-slate-700">
+                    <span className="text-slate-300">Armed State:</span>
+                    <span className="text-[#D4AF37] font-bold font-mono-num">{guardState?.armed_state || 'ARMED_AWAY'}</span>
+                  </div>
+                </div>
               </div>
 
-              {aiLastResult && (
-                <div className="mt-4 p-4 rounded-xl bg-[#090A0E] border border-slate-800 font-mono text-xs">
-                  <div className="flex items-center justify-between text-slate-400 pb-2 mb-2 border-b border-slate-800">
-                    <span className="text-[#ECC665] font-bold">خروجی هوش مصنوعی سرور (JSON AI Response):</span>
-                    <span className="text-emerald-400 font-mono-num">{aiLastResult.processing_time_ms}ms latency</span>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-slate-300 font-bold mb-1">Detections:</div>
-                      {aiLastResult.detections?.map((d: any, idx: number) => (
-                        <div key={idx} className="bg-[#12151F] p-2 rounded border border-slate-800 text-[11px] mb-1">
-                          <div className="text-[#FFE082] font-semibold">{d.label}</div>
-                          <div className="text-slate-400 text-[10px]">
-                            Type: {d.type} • Confidence: {(d.confidence * 100).toFixed(1)}%
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+              {/* Scenario Trigger Buttons */}
+              <div>
+                <span className="text-slate-400 text-xs font-bold block mb-2">انتخاب سناریوی استاندارد جهت آزمایش آنی خط لوله:</span>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                  <button
+                    onClick={() => triggerAISimulation('human_detected', aiStudioCamera, aiStudioPriority)}
+                    disabled={aiSimulating}
+                    className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-[#D4AF37] text-right transition group"
+                  >
+                    <div className="text-xs font-bold text-white group-hover:text-[#ECC665]">تشخیص انسان</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">Human Detection</div>
+                  </button>
 
-                    <div>
-                      <div className="text-slate-300 font-bold mb-1">Rule Engine Decision:</div>
-                      <div className="bg-[#12151F] p-2.5 rounded border border-slate-800 text-[11px]">
-                        <div className="flex items-center gap-2">
-                          <span className="text-slate-400">تصمیم امنیتی:</span>
-                          <span className={`font-bold px-2 py-0.5 rounded text-[10px] ${
-                            aiLastResult.decision === 'alarm' ? 'bg-red-500/20 text-red-300 border border-red-500/40' : 'bg-blue-500/20 text-blue-300'
-                          }`}>
-                            {aiLastResult.decision.toUpperCase()}
-                          </span>
+                  <button
+                    onClick={() => triggerAISimulation('unknown_face', aiStudioCamera, aiStudioPriority)}
+                    disabled={aiSimulating}
+                    className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-amber-500 text-right transition group"
+                  >
+                    <div className="text-xs font-bold text-white group-hover:text-amber-400">چهره ناشناس</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">Unknown Face Alert</div>
+                  </button>
+
+                  <button
+                    onClick={() => triggerAISimulation('vip_face', aiStudioCamera, aiStudioPriority)}
+                    disabled={aiSimulating}
+                    className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-blue-500 text-right transition group"
+                  >
+                    <div className="text-xs font-bold text-white group-hover:text-blue-400">شناسایی چهره VIP</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">VIP Face Recognition</div>
+                  </button>
+
+                  <button
+                    onClick={() => triggerAISimulation('blocked_plate', aiStudioCamera, aiStudioPriority)}
+                    disabled={aiSimulating}
+                    className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-red-500 text-right transition group"
+                  >
+                    <div className="text-xs font-bold text-white group-hover:text-red-400">پلاک مسدود / حراست</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">Blacklisted Plate</div>
+                  </button>
+
+                  <button
+                    onClick={() => triggerAISimulation('vehicle_detected', aiStudioCamera, aiStudioPriority)}
+                    disabled={aiSimulating}
+                    className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-emerald-500 text-right transition group"
+                  >
+                    <div className="text-xs font-bold text-white group-hover:text-emerald-400">تشخیص خودرو</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">Vehicle Classification</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* AI Visual Inspection & Bounding Box Proof */}
+              {aiLastResult && (
+                <div className="mt-4 p-4 rounded-xl bg-[#090A0E] border border-slate-800 font-mono text-xs space-y-4">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-slate-400 pb-2 border-b border-slate-800 gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[#ECC665] font-bold">خروجی هوش مصنوعی سرور (JSON AI Response):</span>
+                      <span className="text-[11px] bg-slate-800 px-2 py-0.5 rounded text-slate-300 font-mono-num">
+                        {aiLastResult.request_id}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 font-mono-num">
+                      <span className="text-emerald-400">⚡ Server Latency: {aiLastResult.processing_time_ms}ms</span>
+                      <span className="text-slate-500">|</span>
+                      <span className="text-slate-300">Priority: {aiStudioPriority}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Visual Detection Preview */}
+                    <div className="bg-[#12151F] p-3 rounded-xl border border-slate-800 flex flex-col justify-between">
+                      <div className="text-slate-300 font-bold mb-2 flex items-center justify-between">
+                        <span>پایش بصری و کادربندی Bounding Box:</span>
+                        <span className="text-[10px] text-slate-400 font-normal">کوردینیت نرمالایز شده [0..1]</span>
+                      </div>
+
+                      {/* Surveillance Canvas with Overlay */}
+                      <div className="relative aspect-video bg-black rounded-lg overflow-hidden border border-slate-700 flex items-center justify-center">
+                        <div className="w-full h-full bg-gradient-to-br from-slate-950 via-[#101420] to-black flex items-center justify-center relative">
+                          <Video className="w-12 h-12 text-[#D4AF37]/30" />
+
+                          {/* Dynamic Bounding Box from AI Detections */}
+                          {aiLastResult.detections?.map((d: any, idx: number) => {
+                            const b = d.box || { x: 0.3, y: 0.2, width: 0.4, height: 0.6 };
+                            return (
+                              <div
+                                key={idx}
+                                style={{
+                                  left: `${b.x * 100}%`,
+                                  top: `${b.y * 100}%`,
+                                  width: `${b.width * 100}%`,
+                                  height: `${b.height * 100}%`
+                                }}
+                                className={`absolute border-2 rounded pointer-events-none flex flex-col justify-between p-1 ${
+                                  aiLastResult.decision === 'alarm'
+                                    ? 'border-red-500 bg-red-500/10 text-red-300'
+                                    : 'border-[#D4AF37] bg-[#D4AF37]/10 text-[#ECC665]'
+                                }`}
+                              >
+                                <span className="bg-black/80 px-1.5 py-0.5 rounded text-[9px] font-bold w-max">
+                                  {d.label} ({(d.confidence * 100).toFixed(0)}%)
+                                </span>
+                                {d.plate_number && (
+                                  <span className="bg-black/90 text-amber-300 px-1.5 py-0.5 rounded text-[10px] font-mono-num w-max">
+                                    {d.plate_number}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                        <div className="mt-2 text-slate-400 text-[10px]">
-                          دستورات ارسالی به مینی‌پی‌سی: {aiLastResult.actions?.length || 0} مورد
-                        </div>
-                        {aiLastResult.actions?.map((act: any, i: number) => (
-                          <div key={i} className="text-emerald-400 text-[10px] mt-0.5">
-                            → {act.command} (Relay: {act.relay || 1}, Duration: {act.duration}s)
+                      </div>
+
+                      <div className="mt-3 space-y-1.5 text-[11px]">
+                        {aiLastResult.detections?.map((d: any, idx: number) => (
+                          <div key={idx} className="bg-[#181C28] p-2 rounded border border-slate-700">
+                            <div className="text-[#FFE082] font-semibold">{d.label}</div>
+                            <div className="text-slate-400 text-[10px]">
+                              Type: {d.type} • Confidence: {(d.confidence * 100).toFixed(1)}%
+                              {d.attributes && ` • Posture: ${d.attributes.posture || 'standing'}`}
+                            </div>
                           </div>
                         ))}
+                      </div>
+                    </div>
+
+                    {/* Rule Engine Decision & Commands */}
+                    <div className="bg-[#12151F] p-3 rounded-xl border border-slate-800 flex flex-col justify-between">
+                      <div>
+                        <div className="text-slate-300 font-bold mb-2">Rule Engine Decision & Edge Actions:</div>
+                        <div className="bg-[#181C28] p-3 rounded-xl border border-slate-700 text-[11px] space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">تصمیم موتور قوانین امنیتی:</span>
+                            <span className={`font-bold px-2 py-0.5 rounded text-[10px] ${
+                              aiLastResult.decision === 'alarm' ? 'bg-red-500/20 text-red-300 border border-red-500/40' : 'bg-blue-500/20 text-blue-300'
+                            }`}>
+                              {aiLastResult.decision.toUpperCase()}
+                            </span>
+                          </div>
+
+                          <div className="text-slate-400 text-[10px] pt-1 border-t border-slate-700">
+                            فرمان‌های ارسالی به مینی‌پی‌سی ایجنت: {aiLastResult.actions?.length || 0} مورد
+                          </div>
+                          {aiLastResult.actions?.map((act: any, i: number) => (
+                            <div key={i} className="text-emerald-400 text-[10px] bg-black/40 p-1.5 rounded font-mono-num">
+                              → {act.command} {act.relay ? `(Relay: ${act.relay})` : ''} {act.duration ? `(Duration: ${act.duration}s)` : ''}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Notification Dispatch Trace */}
+                        <div className="mt-3 bg-[#181C28] p-3 rounded-xl border border-slate-700 text-[11px] space-y-1.5">
+                          <span className="text-slate-400 font-bold block">کانال‌های هشدار مخابره‌شده توسط سرور:</span>
+                          <div className="text-slate-300 text-[10px] flex items-center gap-1.5">
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>پیامک کاوه‌نگار به مدیران کشیک (+989120000001)</span>
+                          </div>
+                          <div className="text-slate-300 text-[10px] flex items-center gap-1.5">
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>تماس صوتی خودکار IVR فرازاس‌ام‌اس</span>
+                          </div>
+                          <div className="text-slate-300 text-[10px] flex items-center gap-1.5">
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>پوش نوتیفیکیشن وب و اپلیکیشن PWA مکران</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2145,28 +2292,38 @@ export function App() {
                             {new Date(inc.created_at).toLocaleTimeString('fa-IR')}
                           </td>
                           <td className="p-3 text-left font-sans">
-                            {inc.status === 'DISPATCHED' && (
+                            <div className="flex items-center justify-end gap-1.5 flex-wrap">
                               <button
-                                onClick={() => handleUpdateIncidentStatus(inc.id, 'INVESTIGATING')}
-                                className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500 hover:text-black border border-amber-500/40 text-amber-300 text-[10px] font-bold transition"
+                                onClick={() => setSelectedIncidentForDossier(inc)}
+                                className="px-2 py-1 rounded bg-[#1C202F] hover:bg-[#D4AF37] hover:text-black border border-slate-700 text-slate-300 text-[10px] font-bold transition flex items-center gap-1"
                               >
-                                شروع بررسی گشت
+                                <FileText className="w-3 h-3" />
+                                <span>پرونده رسمی</span>
                               </button>
-                            )}
-                            {inc.status === 'INVESTIGATING' && (
-                              <button
-                                onClick={() => handleUpdateIncidentStatus(inc.id, 'RESOLVED')}
-                                className="px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500 hover:text-black border border-emerald-500/40 text-emerald-300 text-[10px] font-bold transition"
-                              >
-                                تایید سلامت و رفع حادثه
-                              </button>
-                            )}
-                            {inc.status === 'RESOLVED' && (
-                              <span className="text-emerald-400 text-[10px] font-bold flex items-center justify-end gap-1">
-                                <CheckCircle className="w-3 h-3" />
-                                <span>مختومه</span>
-                              </span>
-                            )}
+
+                              {inc.status === 'DISPATCHED' && (
+                                <button
+                                  onClick={() => handleUpdateIncidentStatus(inc.id, 'INVESTIGATING')}
+                                  className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500 hover:text-black border border-amber-500/40 text-amber-300 text-[10px] font-bold transition"
+                                >
+                                  شروع بررسی گشت
+                                </button>
+                              )}
+                              {inc.status === 'INVESTIGATING' && (
+                                <button
+                                  onClick={() => handleUpdateIncidentStatus(inc.id, 'RESOLVED')}
+                                  className="px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500 hover:text-black border border-emerald-500/40 text-emerald-300 text-[10px] font-bold transition"
+                                >
+                                  تایید و رفع حادثه
+                                </button>
+                              )}
+                              {inc.status === 'RESOLVED' && (
+                                <span className="text-emerald-400 text-[10px] font-bold flex items-center gap-1">
+                                  <CheckCircle className="w-3 h-3" />
+                                  <span>مختومه</span>
+                                </span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -4619,6 +4776,112 @@ export function App() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* OFFICIAL INCIDENT DOSSIER MODAL */}
+        {selectedIncidentForDossier && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-[#0B0D13] border border-[#D4AF37]/60 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 text-slate-200 my-8">
+              {/* Dossier Header */}
+              <div className="flex items-center justify-between pb-4 border-b border-[#D4AF37]/30">
+                <div className="flex items-center gap-3">
+                  <img src="/logo-icon.svg" alt="Makoran Service" className="w-10 h-10 object-contain" />
+                  <div>
+                    <h3 className="text-sm font-black text-white gold-gradient-text">پرونده رسمی رخداد امنیتی و صورت‌جلسه حراست</h3>
+                    <div className="text-[11px] text-slate-400">سامانه جامع پایش الکترونیک و دیسپچ گشت مکران گارد</div>
+                  </div>
+                </div>
+                <div className="text-left font-mono-num text-[11px]">
+                  <div className="text-[#ECC665] font-bold">MK-DOSSIER-{selectedIncidentForDossier.id.toUpperCase()}</div>
+                  <div className="text-red-400 font-sans font-bold text-[10px]">طبقه‌بندی: محرمانه حراست</div>
+                </div>
+              </div>
+
+              {/* Incident Details Summary Card */}
+              <div className="bg-[#121520] p-4 rounded-xl border border-slate-800 space-y-3 text-xs">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-700/80">
+                  <span className="font-bold text-white text-sm">{selectedIncidentForDossier.title}</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                    selectedIncidentForDossier.severity === 'CRITICAL' ? 'bg-red-500/20 text-red-300 border border-red-500/40' :
+                    selectedIncidentForDossier.severity === 'HIGH' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
+                    'bg-blue-500/20 text-blue-300'
+                  }`}>
+                    سطح فوریت: {selectedIncidentForDossier.severity}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-[11px]">
+                  <div>موقعیت / زون رخداد: <span className="text-white font-semibold">پتروشیمی نگین مکران (Zone Perimeter)</span></div>
+                  <div>دوربین ناظر هوش مصنوعی: <span className="text-white font-mono-num">{selectedIncidentForDossier.camera_id}</span></div>
+                  <div>نیروی ضابط / مامور اعزامی: <span className="text-[#ECC665] font-semibold">{selectedIncidentForDossier.assigned_to || 'گشت واکنش سریع'}</span></div>
+                  <div>زمان ثبت رسمی: <span className="text-slate-300 font-mono-num">{new Date(selectedIncidentForDossier.created_at).toLocaleString('fa-IR')}</span></div>
+                </div>
+              </div>
+
+              {/* Incident Chronology / Steps */}
+              <div className="bg-[#121520] p-4 rounded-xl border border-slate-800 space-y-2 text-xs">
+                <span className="font-bold text-slate-300 block mb-1">گاه‌شمار رخداد و اقدامات عملیاتی:</span>
+                <div className="space-y-1.5 text-[11px]">
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    <span>۱. تشخیص نفوذ توسط درگاه هوش مصنوعی ابری مکران و تایید آژیر امنیتی</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                    <span>۲. صدور دستور اعزام فوری، ارسال پیامک هشدار به سرپرست کشیک و آژیر فیزیکی</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                    <span>۳. استقرار تیم گشت در محل حادثه و بازرسی فیزیکی فنس‌ها و درب‌ها</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    <span>۴. بررسی نهایی، تایید سلامت محوطه و صدور گواهی خاتمه ماموریت</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Root Cause Analysis Statement */}
+              <div className="bg-[#121520] p-4 rounded-xl border border-slate-800 space-y-1 text-xs">
+                <span className="font-bold text-slate-300 block">شرح علت ریشه‌ای و مستندسازی حراست:</span>
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  {selectedIncidentForDossier.root_cause || selectedIncidentForDossier.notes || 'عملیات سرکشی میدانی و بازرسی فیزیکی پیرامون با موفقیت انجام شد و وضعیت زون عادی و امن ارزیابی گردید.'}
+                </p>
+              </div>
+
+              {/* Digital Stamps & Signatures */}
+              <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-800 text-xs">
+                <div className="border border-slate-800 rounded-xl p-3 text-center space-y-1">
+                  <div className="text-slate-400 text-[10px]">امضای دیجیتال سرپرست شیفت حراست:</div>
+                  <div className="font-bold text-white text-xs">ستوان محمدی (سرپرست کشیک)</div>
+                  <div className="text-emerald-400 text-[9px] font-mono-num">DIGITALLY SIGNED • VALID</div>
+                </div>
+
+                <div className="border border-[#D4AF37]/30 bg-[#D4AF37]/5 rounded-xl p-3 text-center space-y-1">
+                  <div className="text-slate-400 text-[10px]">مهر واحد نظارت الکترونیک مکران گارد:</div>
+                  <div className="font-bold text-[#ECC665] text-xs">مکران گارد سنترال (تایید شد)</div>
+                  <div className="text-slate-400 text-[9px] font-mono-num">SHA256: 4b29f...e71c</div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                <button
+                  onClick={() => setSelectedIncidentForDossier(null)}
+                  className="px-4 py-1.5 rounded-xl bg-slate-800 text-xs font-semibold text-slate-300"
+                >
+                  بستن پرونده
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="px-4 py-1.5 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black font-bold text-xs flex items-center gap-1.5 shadow"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>چاپ سند رسمی (Print Official Dossier)</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

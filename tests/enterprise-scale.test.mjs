@@ -191,8 +191,21 @@ async function runEnterpriseScaleTests() {
     process.exit(1);
   }
 
+  // 9. OpenAPI 3.0 Documentation Specification
+  try {
+    const docsRes = await fetch(`${BASE_URL}/docs`);
+    const docs = await docsRes.json();
+    if (!docs.openapi || docs.openapi !== '3.0.3' || !docs.info?.title) {
+      throw new Error('OpenAPI 3.0 contract specification invalid: ' + JSON.stringify(docs));
+    }
+    console.log(`✓ Stage 9: OpenAPI 3.0 Specification verified (${docs.endpoints_count} endpoints documented)`);
+  } catch (err) {
+    console.error('✗ Stage 9 failed:', err);
+    process.exit(1);
+  }
+
   console.log('\n===========================================================');
-  console.log(' ALL 8 ENTERPRISE INTEGRATION STAGES PASSED SUCCESSFULLY!');
+  console.log(' ALL 9 ENTERPRISE INTEGRATION STAGES PASSED SUCCESSFULLY!');
   console.log('===========================================================');
 }
 

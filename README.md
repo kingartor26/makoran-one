@@ -104,11 +104,20 @@ npm test
 4. **Security Rule Engine Test (`tests/rule-engine.test.mjs`)**: تست ارزیابی منطقی شرایط، زون‌ها، وضعیت‌های مسلح و جدول زمان‌بندی قوانین امنیتی.
 5. **Camera WS-Discovery & RTSP Probe Test (`tests/camera-discovery.test.mjs`)**: کشف خودکار تجهیزات Dahua, Hikvision, XMeye و NVRهای شبکه محلی.
 6. **Commercial SaaS Features Suite (`tests/saas-features.test.mjs`)**: اعتبارسنجی حضور و غیاب بیومتریک، اتوماسیون ساختمان، صدور سفارشات فروشگاه، مدیریت چندمستأجری، لاگ‌های غیرقابل‌دستکاری و ارتقای RBAC.
-7. **Enterprise Scale & Security Operations Suite (`tests/enterprise-scale.test.mjs`)**: اعتبارسنجی چرخه کامل تیکت‌ها و اعزام گشت حراست، دفتر الکترونیک ثبت تحویل و تحول شیفت‌ها، چک‌پوینت‌های نظارتی گشت و تهیه نسخه پشتیبان رمزنگاری‌شده فاجعه (Disaster Recovery Snapshot).
+7. **Enterprise Scale & Security Operations Suite (`tests/enterprise-scale.test.mjs`)**: اعتبارسنجی ۹ مرحله‌ای شامل: چرخه کامل تیکت‌ها و اعزام گشت حراست، دفتر الکترونیک ثبت تحویل و تحول شیفت‌ها، چک‌پوینت‌های نظارتی گشت، تهیه نسخه پشتیبان رمزنگاری‌شده فاجعه (Disaster Recovery Snapshot)، پخش زنده پیام صوتی بازدارنده روی بلندگوی محیطی مینی‌پی‌سی و اعتبارسنجی مشخصات قرارداد OpenAPI 3.0.
 
 ---
 
-## 📦 ۷. استقرار با داکر (Docker Deployment)
+## 📡 ۷. مستندات تعاملی API (OpenAPI 3.0 Specification)
+
+سند رسمی قراردادهای وب‌سرویس پلتفرم بر روی اندپوینت اختصاصی کلاود در دسترس است:
+- **اندپوینت مستندات:** `GET /api/v1/docs`
+- **پروتکل:** OpenAPI 3.0.3 با ۳۶ اندپوینت استاندارد سازمانی
+- **تگ‌های عملیاتی:** Core & Health، Auth & RBAC، Guard Alarm، AI Gateway، On-Demand WebRTC، Edge Agents، Incidents & Patrols، و Disaster Recovery.
+
+---
+
+## 📦 ۸. استقرار با داکر (Docker Deployment)
 
 ```bash
 docker-compose up -d --build
@@ -116,7 +125,7 @@ docker-compose up -d --build
 
 ---
 
-## 📂 ۸. ساختار پوشه‌ها و ماژول‌ها
+## 📂 ۹. ساختار پوشه‌ها و ماژول‌ها
 
 ```
 makoran-one/

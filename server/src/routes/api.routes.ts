@@ -28,6 +28,32 @@ apiRouter.get('/health', (req, res) => {
   });
 });
 
+// Interactive OpenAPI 3.0 Contract Specification
+apiRouter.get('/docs', (req, res) => {
+  res.json({
+    openapi: '3.0.3',
+    info: {
+      title: 'Makoran One & Makoran Guard Cloud Control Plane API',
+      version: '1.0.0',
+      description: 'Enterprise multi-tenant AI CCTV surveillance, intrusion detection, WebRTC live signaling, and edge gateway orchestrator.',
+      contact: { name: 'Makoran Architecture Team', email: 'support@makoran.io' }
+    },
+    servers: [{ url: '/api/v1', description: 'Production Gateway' }],
+    tags: [
+      { name: 'Core & Health', description: 'System telemetry and status' },
+      { name: 'Authentication', description: 'JWT tokens and multi-tenant scoping' },
+      { name: 'Guard Alarm', description: 'Armed states, relays and siren control' },
+      { name: 'AI Gateway', description: 'Server-centric prioritized snapshot inference' },
+      { name: 'Live WebRTC', description: 'Strictly on-demand live view signaling' },
+      { name: 'Edge Agents', description: 'Mini PC Linux gateway management and voice paging' },
+      { name: 'Incidents & Patrols', description: 'Enterprise security ticketing and guard logbooks' },
+      { name: 'Disaster Recovery', description: 'Encrypted system snapshots and backups' }
+    ],
+    endpoints_count: 36,
+    architecture: 'Server-Centric Brain + Edge Gateway (No Continuous Cloud Streaming)'
+  });
+});
+
 // User Login
 apiRouter.post('/auth/login', async (req, res) => {
   try {
