@@ -1,0 +1,19 @@
+{
+  "name": "مکران وان | پلتفرم امنیت هوشمند مکران گارد",
+  "short_name": "Makoran One",
+  "description": "سامانه نظارت تصویری و امنیت هوشمند ابری مکران گارد",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08090C",
+  "theme_color": "#D4AF37",
+  "dir": "rtl",
+  "lang": "fa",
+  "icons": [
+    {
+      "src": "/logo-icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

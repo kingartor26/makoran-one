@@ -419,11 +419,21 @@ export class DatabaseService {
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `, ['tenant-makoran-01', 'ARMED_AWAY', 'RESOLVED', 'usr-admin-01', now, 0, 0]);
 
-    // 4. Default Makoran Agent (Intel N100 Mini PC)
+    // 4. Default Makoran Agents (Regional Mini PC Fleet)
     this.run(`
       INSERT INTO agents (id, tenant_id, name, token, status, version, ip_address, cpu_usage, memory_usage_mb, memory_total_mb, disk_used_gb, disk_total_gb, uptime_seconds, last_heartbeat, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, ['agent-mini-01', 'tenant-makoran-01', 'مینی پی‌سی گیت‌وی ۱ (Mini PC Gateway N100)', 'agt_tok_makoran_secret_01', 'ONLINE', '1.2.4', '192.168.1.105', 8.5, 1420, 8192, 34.2, 256.0, 43200, now, now]);
+    `, ['agent-mini-01', 'tenant-makoran-01', 'گیت‌وی مرکزی چابهار (Chabahar HQ - Intel N100)', 'agt_tok_makoran_secret_01', 'ONLINE', '1.2.4', '192.168.1.105', 8.5, 1420, 8192, 34.2, 256.0, 43200, now, now]);
+
+    this.run(`
+      INSERT INTO agents (id, tenant_id, name, token, status, version, ip_address, cpu_usage, memory_usage_mb, memory_total_mb, disk_used_gb, disk_total_gb, uptime_seconds, last_heartbeat, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, ['agent-mini-02', 'tenant-makoran-01', 'گیت‌وی انبار ساحلی کنارک (Konarak Warehouse - Intel N95)', 'agt_tok_makoran_secret_02', 'ONLINE', '1.2.4', '192.168.2.110', 12.1, 1680, 8192, 48.0, 256.0, 86400, now, now]);
+
+    this.run(`
+      INSERT INTO agents (id, tenant_id, name, token, status, version, ip_address, cpu_usage, memory_usage_mb, memory_total_mb, disk_used_gb, disk_total_gb, uptime_seconds, last_heartbeat, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, ['agent-mini-03', 'tenant-makoran-01', 'گیت‌وی پایانه دریایی جاسک (Jask Port Terminal - Intel N100)', 'agt_tok_makoran_secret_03', 'ONLINE', '1.2.4', '192.168.3.115', 7.2, 1310, 8192, 28.5, 256.0, 21600, now, now]);
 
     // 5. Default Devices (NVR and Dahua Switch)
     this.run(`

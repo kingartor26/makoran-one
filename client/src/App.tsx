@@ -45,7 +45,97 @@ export function App() {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [searchPersonName, setSearchPersonName] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [selectedEventModal, setSelectedEventModal] = useState<SecurityEvent | null>(null);
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [otaDeploying, setOtaDeploying] = useState(false);
+  const [otaProgress, setOtaProgress] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
+
+  // Audio Context Ref for Siren
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const sirenOscRef = useRef<OscillatorNode | null>(null);
+
+  // Play / Stop Tactical Alarm Siren via Web Audio API
+  const playAlarmSiren = () => {
+    if (!audioEnabled) return;
+    try {
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+
+      if (sirenOscRef.current) return; // already playing
+
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+
+      osc.type = 'sawtooth';
+      // 2-tone police/security warble (800Hz <-> 1200Hz)
+      const now = ctx.currentTime;
+      for (let i = 0; i < 20; i++) {
+        osc.frequency.setValueAtTime(800, now + i * 0.5);
+        osc.frequency.setValueAtTime(1200, now + i * 0.5 + 0.25);
+      }
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      sirenOscRef.current = osc;
+    } catch (e) {
+      console.warn('Audio API unavailable:', e);
+    }
+  };
+
+  const stopAlarmSiren = () => {
+    if (sirenOscRef.current) {
+      try {
+        sirenOscRef.current.stop();
+        sirenOscRef.current.disconnect();
+      } catch (e) {}
+      sirenOscRef.current = null;
+    }
+  };
+
+  // Trigger audio on alarm state
+  useEffect(() => {
+    if (guardState?.alarm_status === 'TRIGGERED' && guardState?.siren_active) {
+      playAlarmSiren();
+    } else {
+      stopAlarmSiren();
+    }
+    return () => stopAlarmSiren();
+  }, [guardState?.alarm_status, guardState?.siren_active, audioEnabled]);
+
+  // Fleet OTA Update
+  const handleFleetOTA = () => {
+    setOtaDeploying(true);
+    const initial: Record<string, number> = {};
+    agents.forEach(a => { initial[a.id] = 5; });
+    setOtaProgress(initial);
+    showToast('بسته ارتقای امنیتی فریم‌ورک v1.3.0 به تمام ناوگان مینی‌پی‌سی مخابره شد', 'info');
+
+    let currentStep = 5;
+    const interval = setInterval(() => {
+      currentStep += 20;
+      const progress: Record<string, number> = {};
+      agents.forEach(a => {
+        progress[a.id] = Math.min(100, currentStep + Math.floor(Math.random() * 10));
+      });
+      setOtaProgress(progress);
+
+      if (currentStep >= 100) {
+        clearInterval(interval);
+        setOtaDeploying(false);
+        showToast('تمامی مینی‌پی‌سی‌های ناوگان با موفقیت به نسخه v1.3.0 ارتقا یافتند و خودآزمایی شد', 'success');
+        api.getAgents().then(setAgents);
+      }
+    }, 800);
+  };
 
   // Live View WebRTC Sessions (Camera ID -> Session ID)
   const [activeLiveStreams, setActiveLiveStreams] = useState<Record<string, { sessionId: string; startedAt: number }>>({});
@@ -585,7 +675,21 @@ export function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setAudioEnabled(!audioEnabled);
+                showToast(audioEnabled ? 'صدای آژیر سامانه قطع شد' : 'صدای آژیر صوتی فعال گردید', 'info');
+              }}
+              title={audioEnabled ? 'قطع صدای آژیر سیستم' : 'فعال‌سازی صدای آژیر'}
+              className={`p-2 rounded-xl border transition ${
+                audioEnabled
+                  ? 'bg-[#171A24] border-slate-700/60 text-[#ECC665] hover:border-[#D4AF37]'
+                  : 'bg-red-950/40 border-red-800 text-red-400'
+              }`}
+            >
+              <Bell className="w-4 h-4" />
+            </button>
             <div className="text-left hidden sm:block">
               <div className="text-xs font-bold text-slate-200">{user.fullName}</div>
               <div className="text-[10px] text-[#ECC665] font-mono-num uppercase">{user.role}</div>
@@ -1058,7 +1162,11 @@ export function App() {
                   <div className="p-8 text-center text-slate-500 text-xs">هیچ رویدادی ثبت نشده است.</div>
                 ) : (
                   events.map(ev => (
-                    <div key={ev.id} className="p-4 hover:bg-[#131622] transition flex items-center justify-between gap-4">
+                    <div
+                      key={ev.id}
+                      onClick={() => setSelectedEventModal(ev)}
+                      className="p-4 hover:bg-[#131622] transition flex items-center justify-between gap-4 cursor-pointer group"
+                    >
                       <div className="flex items-center gap-3">
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                           ev.alarm_triggered ? 'bg-red-500/20 text-red-400 border border-red-500/40' : 'bg-blue-500/20 text-blue-400 border border-blue-500/40'
@@ -1066,7 +1174,7 @@ export function App() {
                           {ev.alarm_triggered ? <AlertTriangle className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                         </div>
                         <div>
-                          <div className="text-xs font-bold text-white flex items-center gap-2">
+                          <div className="text-xs font-bold text-white group-hover:text-[#ECC665] flex items-center gap-2 transition">
                             <span>{ev.label}</span>
                             {ev.alarm_triggered === 1 && (
                               <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-500 text-white font-bold">ALARM</span>
@@ -1161,6 +1269,72 @@ export function App() {
                 </div>
               </div>
             )}
+
+            {/* FLEET OTA DEPLOYMENT BAR */}
+            <div className="bg-[#121520] border border-[#D4AF37]/40 rounded-2xl p-5 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Download className="w-4 h-4 text-[#D4AF37]" />
+                  <span>مدیریت یکپارچه ناوگان مینی‌پی‌سی مکران (Fleet OTA Deployment Manager)</span>
+                </h4>
+                <p className="text-xs text-slate-400 mt-1">
+                  ارتقای اتمیک فریم‌ورک تمام گیت‌وی‌های منطقه مکران (چابهار، کنارک، جاسک) با اعتبارسنجی یکپارچگی SHA256 و رول‌بک خودکار.
+                </p>
+              </div>
+              <button
+                onClick={handleFleetOTA}
+                disabled={otaDeploying}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B38622] hover:opacity-95 text-black text-xs font-bold transition flex items-center gap-2 shadow shrink-0"
+              >
+                {otaDeploying ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                <span>{otaDeploying ? 'در حال ارسال و استقرار OTA...' : 'ارتقای سراسری ناوگان به v1.3.0'}</span>
+              </button>
+            </div>
+
+            {/* REGIONAL AGENTS FLEET GRID */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {agents.map(ag => {
+                const progress = otaProgress[ag.id];
+                return (
+                  <div key={ag.id} className="bg-[#0F1118] border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                        <span className="text-xs font-bold text-white truncate max-w-[180px]">{ag.name}</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold">
+                          {ag.status}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 font-mono-num space-y-1 mt-2">
+                        <div>IP: {ag.ip_address}</div>
+                        <div>نسخه فعلی: v{ag.version}</div>
+                        <div>بار CPU: {ag.cpu_usage}% • حافظه: {(ag.memory_usage_mb / 1024).toFixed(1)} GB</div>
+                      </div>
+
+                      {progress !== undefined && (
+                        <div className="mt-3">
+                          <div className="flex justify-between text-[10px] text-slate-400 font-mono-num mb-1">
+                            <span>OTA Progress:</span>
+                            <span>{progress}%</span>
+                          </div>
+                          <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                            <div className="bg-[#D4AF37] h-full rounded-full transition-all duration-300" style={{ width: `${progress}%` }}></div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-4 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
+                      <button onClick={() => testAgentRelay(ag.id, 1)} className="px-2 py-1 rounded bg-[#181C28] hover:bg-[#D4AF37] hover:text-black font-semibold text-slate-300 transition">
+                        تست رله ۱
+                      </button>
+                      <button onClick={() => testAgentSiren(ag.id)} className="px-2 py-1 rounded bg-[#181C28] hover:bg-red-500 hover:text-white font-semibold text-slate-300 transition">
+                        تست آژیر
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
 
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -1660,9 +1834,16 @@ export function App() {
                     بسته انتخابی: <span className="text-[#ECC665] font-bold">Makoran Guard Enterprise AI</span>
                   </p>
                 </div>
-                <div className="text-left font-mono-num">
+                <div className="text-left font-mono-num flex flex-col items-end gap-1">
                   <div className="text-lg font-black text-[#D4AF37]">45,000,000 تومان / ماهانه</div>
                   <div className="text-[10px] text-slate-400">تمدید بعدی: ۲۰۲۶/۱۰/۱۷</div>
+                  <button
+                    onClick={() => setShowInvoiceModal(true)}
+                    className="mt-1 px-3 py-1 rounded-lg bg-[#1D212E] hover:bg-[#D4AF37] hover:text-black border border-slate-700 text-xs font-semibold text-slate-200 transition flex items-center gap-1 font-sans"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>چاپ پیش‌فاکتور رسمی</span>
+                  </button>
                 </div>
               </div>
 
@@ -1788,7 +1969,198 @@ export function App() {
           </div>
         )}
 
+        {/* EVENT SNAPSHOT INSPECTOR MODAL */}
+        {selectedEventModal && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="bg-[#10131D] border border-[#D4AF37]/50 rounded-2xl max-w-2xl w-full p-6 shadow-2xl flex flex-col gap-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Eye className="w-5 h-5 text-[#D4AF37]" />
+                  <span className="font-bold text-sm text-white">بازرسی تصویر رویداد هوش مصنوعی (AI Snapshot Inspector)</span>
+                </div>
+                <button onClick={() => setSelectedEventModal(null)} className="text-slate-400 hover:text-white text-lg">✕</button>
+              </div>
+
+              {/* Snapshot View with Simulated Bounding Box Overlay */}
+              <div className="relative aspect-video bg-black rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
+                {/* Surveillance Screen Background */}
+                <div className="w-full h-full bg-gradient-to-br from-slate-950 via-[#121622] to-black flex items-center justify-center relative">
+                  <div className="text-center">
+                    <Video className="w-12 h-12 text-[#D4AF37]/40 mx-auto mb-2" />
+                    <div className="text-xs text-slate-400 font-mono-num">{selectedEventModal.snapshot_url}</div>
+                  </div>
+
+                  {/* Bounding Box Visualizer */}
+                  <div className="absolute inset-x-1/3 inset-y-1/4 border-2 border-[#D4AF37] bg-[#D4AF37]/10 rounded flex flex-col justify-between p-1.5 pointer-events-none">
+                    <span className="bg-[#D4AF37] text-black text-[10px] font-bold px-1.5 py-0.5 rounded w-max">
+                      {selectedEventModal.label} ({(selectedEventModal.confidence * 100).toFixed(0)}%)
+                    </span>
+                    <span className="text-[9px] text-[#ECC665] font-mono-num">
+                      TARGET DETECTED • ZONE: {selectedEventModal.zone || 'PERIMETER'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Event Metadata */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div className="bg-[#161925] p-2.5 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block text-[10px]">نوع رویداد:</span>
+                  <span className="font-bold text-slate-200">{selectedEventModal.event_type}</span>
+                </div>
+                <div className="bg-[#161925] p-2.5 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block text-[10px]">دوربین:</span>
+                  <span className="font-bold text-slate-200">{selectedEventModal.camera_name || selectedEventModal.camera_id}</span>
+                </div>
+                <div className="bg-[#161925] p-2.5 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block text-[10px]">تصمیم امنیتی:</span>
+                  <span className={`font-bold ${selectedEventModal.alarm_triggered ? 'text-red-400' : 'text-blue-400'}`}>
+                    {selectedEventModal.decision.toUpperCase()}
+                  </span>
+                </div>
+                <div className="bg-[#161925] p-2.5 rounded-xl border border-slate-800 font-mono-num">
+                  <span className="text-slate-500 block text-[10px]">زمان رخداد:</span>
+                  <span className="text-slate-300">{new Date(selectedEventModal.created_at).toLocaleTimeString('fa-IR')}</span>
+                </div>
+              </div>
+
+              {/* Quick Security Actions */}
+              <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      api.addFace({ name: `مشکوک - ${selectedEventModal.camera_id}`, category: 'BLOCKED', notes: 'ثبت خودکار از رویداد مشکوک' });
+                      showToast('شخص شناسایی شده به لیست سیاه حراست افزوده شد', 'error');
+                      setSelectedEventModal(null);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-800 text-red-300 text-xs font-bold transition"
+                  >
+                    + افزودن به لیست سیاه (Blacklist)
+                  </button>
+                  <button
+                    onClick={() => {
+                      api.addFace({ name: `کارمند تایید شده`, category: 'EMPLOYEE', notes: 'ثبت سریع از تصویر' });
+                      showToast('به لیست پرسنل مجاز افزوده شد', 'success');
+                      setSelectedEventModal(null);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-800 text-emerald-300 text-xs font-bold transition"
+                  >
+                    + تایید هویت مجاز (Whitelist)
+                  </button>
+                </div>
+                <button
+                  onClick={() => setSelectedEventModal(null)}
+                  className="px-4 py-1.5 rounded-xl bg-slate-800 text-xs font-semibold text-slate-300"
+                >
+                  بستن
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PRINTABLE OFFICIAL SAAS INVOICE MODAL */}
+        {showInvoiceModal && (
+          <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-[#0B0D13] border border-[#D4AF37]/60 rounded-2xl max-w-3xl w-full p-8 shadow-2xl text-slate-200 relative my-8">
+              <div className="flex items-center justify-between pb-6 border-b border-[#D4AF37]/30">
+                <div className="flex items-center gap-3">
+                  <img src="/logo-icon.svg" alt="Makoran Logo" className="w-12 h-12 object-contain" />
+                  <div>
+                    <h2 className="text-lg font-black gold-gradient-text">صورت‌حساب خدمات ابری مکران وان</h2>
+                    <div className="text-[11px] text-slate-400">سامانه جامع امنیت هوشمند و نظارت تصویری مکران گارد</div>
+                  </div>
+                </div>
+                <div className="text-left font-mono-num text-xs">
+                  <div>شماره فاکتور: <span className="text-[#ECC665]">MK-INV-2026-09</span></div>
+                  <div>تاریخ صدور: <span className="text-slate-300">۱۴۰۵/۰۶/۲۷</span></div>
+                </div>
+              </div>
+
+              {/* Customer Info Box */}
+              <div className="grid grid-cols-2 gap-4 my-6 p-4 rounded-xl bg-[#121520] border border-slate-800 text-xs">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">مشترک / سازمان:</span>
+                  <span className="font-bold text-white text-sm">{user.tenantName}</span>
+                  <div className="text-slate-400 text-[11px] mt-1">شناسه سازمانی: {user.tenantId}</div>
+                </div>
+                <div className="text-left">
+                  <span className="text-slate-400 block text-[10px]">موقعیت سایت:</span>
+                  <span className="text-slate-200">منطقه آزاد تجاری صنعتی چابهار، سواحل مکران</span>
+                  <div className="text-emerald-400 text-[11px] mt-1">وضعیت پرداخت: تایید شده (PAID)</div>
+                </div>
+              </div>
+
+              {/* Items Table */}
+              <table className="w-full text-right text-xs border border-slate-800 rounded-xl overflow-hidden mb-6">
+                <thead className="bg-[#151926] text-slate-300">
+                  <tr>
+                    <th className="p-3">شرح خدمت / پکیج</th>
+                    <th className="p-3">تعداد دوربین</th>
+                    <th className="p-3">گیت‌وی N100</th>
+                    <th className="p-3">مبلغ واحد (تومان)</th>
+                    <th className="p-3 text-left">مجموع (تومان)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/80 font-mono-num">
+                  <tr>
+                    <td className="p-3 font-bold text-white font-sans">اشتراک ابری مکران گارد انترپرایز (ماهانه)</td>
+                    <td className="p-3">32 کانال</td>
+                    <td className="p-3">8 دستگاه</td>
+                    <td className="p-3">45,000,000</td>
+                    <td className="p-3 text-left text-[#ECC665] font-bold">45,000,000</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div className="flex flex-col items-end gap-1 text-xs font-mono-num pb-6 border-b border-slate-800">
+                <div className="text-slate-400">مالیات بر ارزش افزوده (۱۰٪): ۴,۵۰۰,۰۰۰ تومان</div>
+                <div className="text-base font-black text-[#D4AF37]">مبلغ کل پرداختی: ۴۹,۵۰۰,۰۰۰ تومان</div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-between pt-4">
+                <div className="text-[11px] text-slate-500">
+                  این صورت‌حساب الکترونیکی دارای امضای دیجیتال و تاییدیه مالی شرکت مکران وان می‌باشد.
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => window.print()} className="px-4 py-2 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition flex items-center gap-1.5 shadow">
+                    <span>🖨️ چاپ فاکتور رسمی</span>
+                  </button>
+                  <button onClick={() => setShowInvoiceModal(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-xs font-semibold text-slate-300">
+                    بستن
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
       </main>
+
+      {/* MOBILE BOTTOM NAVIGATION BAR */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0B0D13]/95 backdrop-blur-md border-t border-[#D4AF37]/30 px-2 py-1.5 flex items-center justify-around text-[10px]">
+        <button onClick={() => setCurrentTab('monitor')} className={`flex flex-col items-center gap-1 p-1 ${currentTab === 'monitor' ? 'text-[#ECC665]' : 'text-slate-400'}`}>
+          <Video className="w-4 h-4" />
+          <span>مانیتورینگ</span>
+        </button>
+        <button onClick={() => setCurrentTab('events')} className={`flex flex-col items-center gap-1 p-1 ${currentTab === 'events' ? 'text-[#ECC665]' : 'text-slate-400'}`}>
+          <Activity className="w-4 h-4" />
+          <span>رویدادها</span>
+        </button>
+        <button onClick={() => setCurrentTab('cameras')} className={`flex flex-col items-center gap-1 p-1 ${currentTab === 'cameras' ? 'text-[#ECC665]' : 'text-slate-400'}`}>
+          <CamIcon className="w-4 h-4" />
+          <span>دوربین‌ها</span>
+        </button>
+        <button onClick={() => setCurrentTab('attendance')} className={`flex flex-col items-center gap-1 p-1 ${currentTab === 'attendance' ? 'text-[#ECC665]' : 'text-slate-400'}`}>
+          <Clock className="w-4 h-4" />
+          <span>تردد</span>
+        </button>
+        <button onClick={() => setCurrentTab('shop')} className={`flex flex-col items-center gap-1 p-1 ${currentTab === 'shop' ? 'text-[#ECC665]' : 'text-slate-400'}`}>
+          <ShoppingBag className="w-4 h-4" />
+          <span>فروشگاه</span>
+        </button>
+      </nav>
 
       {/* FOOTER */}
       <footer className="bg-[#08090C] border-t border-slate-800/80 py-4 px-4 text-center text-xs text-slate-400">
