@@ -154,12 +154,33 @@ export function App() {
   const [discoveredCams, setDiscoveredCams] = useState<any[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [cartModal, setCartModal] = useState<ShopProductItem | null>(null);
+  const [showAttendanceModal, setShowAttendanceModal] = useState(false);
+  const [showAddFacilityModal, setShowAddFacilityModal] = useState(false);
+  const [showAddTenantModal, setShowAddTenantModal] = useState(false);
 
   // Forms
   const [newCam, setNewCam] = useState({ name: '', protocol: 'ONVIF', zone: 'entrance', stream_url: '', channel_index: 1 });
   const [newFace, setNewFace] = useState({ name: '', category: 'VIP', phone: '', notes: '' });
   const [newPlate, setNewPlate] = useState({ plate_number: '', owner_name: '', category: 'ALLOWED', vehicle_model: '' });
   const [orderCustomer, setOrderCustomer] = useState({ name: '', phone: '' });
+  const [attendanceForm, setAttendanceForm] = useState({
+    person_name: 'مهندس رضا مکرانی',
+    person_id: 'face-01',
+    check_type: 'CHECK_IN' as 'CHECK_IN' | 'CHECK_OUT',
+    camera_id: 'cam-01',
+    confidence: 0.98
+  });
+  const [newFacility, setNewFacility] = useState({
+    name: '',
+    type: 'LIGHT',
+    zone: 'entrance',
+    agent_id: 'agent-mini-01'
+  });
+  const [newTenant, setNewTenant] = useState({
+    name: '',
+    slug: '',
+    plan: 'Enterprise Guard'
+  });
   const [newRule, setNewRule] = useState({
     name: '',
     armed_away: true,
@@ -544,6 +565,78 @@ export function App() {
       setUser(res.user);
       showToast(`سازمان فعال به «${res.tenant.name}» تغییر یافت`, 'success');
       loadAllData();
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Create New Tenant Organization
+  const handleCreateTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.createTenant({
+        name: newTenant.name,
+        slug: newTenant.slug || undefined,
+        plan: newTenant.plan
+      });
+      showToast(`سازمان «${newTenant.name}» با موفقیت افزوده و فعال شد`, 'success');
+      setShowAddTenantModal(false);
+      setNewTenant({ name: '', slug: '', plan: 'Enterprise Guard' });
+      const tList = await api.getTenants();
+      setTenantsList(tList);
+      loadAllData();
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Submit Interactive Face Attendance
+  const handleAttendanceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.logAttendance({
+        person_id: attendanceForm.person_id,
+        person_name: attendanceForm.person_name,
+        camera_id: attendanceForm.camera_id,
+        check_type: attendanceForm.check_type,
+        confidence: attendanceForm.confidence
+      });
+      showToast(`تردد بیومتریک برای «${attendanceForm.person_name}» با موفقیت ثبت شد`, 'success');
+      setShowAttendanceModal(false);
+      const updated = await api.getAttendance();
+      setAttendance(updated);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Add Facility Device
+  const handleAddFacilitySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.addFacility(newFacility);
+      showToast(`دستگاه هوشمند «${newFacility.name}» با موفقیت افزوده شد`, 'success');
+      setShowAddFacilityModal(false);
+      setNewFacility({ name: '', type: 'LIGHT', zone: 'entrance', agent_id: 'agent-mini-01' });
+      const facRes = await api.getFacilities();
+      setFacilities(facRes);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Facility Master Control
+  const handleFacilityMaster = async (action: 'ALL_OFF' | 'ALL_ON' | 'LOCKDOWN') => {
+    try {
+      await api.facilityMasterControl(action);
+      const actionLabels: Record<string, string> = {
+        'ALL_OFF': 'خاموشی کلیه چراغ‌ها و تجهیزات',
+        'ALL_ON': 'روشن‌سازی کلیه چراغ‌ها و روشنایی سایت',
+        'LOCKDOWN': 'قفل امنیتی سراسری و بستن کلیه گیت‌ها'
+      };
+      showToast(`فرمان مستر «${actionLabels[action]}» به رله‌های مینی‌پی‌سی ابلاغ شد`, 'success');
+      const facRes = await api.getFacilities();
+      setFacilities(facRes);
     } catch (err: any) {
       showToast(err.message, 'error');
     }
@@ -1568,8 +1661,8 @@ export function App() {
 
         {/* TAB 4: ATTENDANCE & FACE CLOCK-IN */}
         {currentTab === 'attendance' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
                   <Clock className="w-4 h-4 text-[#D4AF37]" />
@@ -1579,14 +1672,140 @@ export function App() {
                   ثبت خودکار ورود و خروج پرسنل با هوش مصنوعی سرور بدون نیاز به تماس فیزیکی یا کارت تردد.
                 </p>
               </div>
-              <button
-                onClick={testAttendanceClockIn}
-                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B38622] text-black text-xs font-bold transition flex items-center gap-1.5 shadow"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>ثبت تردد آزمایشی با چهره</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowAttendanceModal(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B38622] text-black text-xs font-bold transition flex items-center gap-1.5 shadow"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>اسکن و ثبت تردد هوشمند</span>
+                </button>
+              </div>
             </div>
+
+            {/* Attendance KPI Statistics */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-mono-num">
+              <div className="bg-[#0F1118] border border-slate-800 p-4 rounded-xl">
+                <div className="text-slate-400 font-sans">حاضرین شیفت جاری</div>
+                <div className="text-xl font-black text-emerald-400 mt-1">
+                  {attendance.filter(a => a.check_type === 'CHECK_IN').length} نفر
+                </div>
+                <div className="text-[10px] text-slate-500 font-sans mt-0.5">وضعیت فعال در سایت</div>
+              </div>
+              <div className="bg-[#0F1118] border border-slate-800 p-4 rounded-xl">
+                <div className="text-slate-400 font-sans">خروج‌های ثبت‌شده</div>
+                <div className="text-xl font-black text-amber-400 mt-1">
+                  {attendance.filter(a => a.check_type === 'CHECK_OUT').length} مورد
+                </div>
+                <div className="text-[10px] text-slate-500 font-sans mt-0.5">ثبت‌شده توسط گیت‌ها</div>
+              </div>
+              <div className="bg-[#0F1118] border border-slate-800 p-4 rounded-xl">
+                <div className="text-slate-400 font-sans">میانگین تطابق هوش مصنوعی</div>
+                <div className="text-xl font-black text-[#ECC665] mt-1">98.6%</div>
+                <div className="text-[10px] text-slate-500 font-sans mt-0.5">مدل استخراج بردار چهره</div>
+              </div>
+              <div className="bg-[#0F1118] border border-slate-800 p-4 rounded-xl">
+                <div className="text-slate-400 font-sans">پرسنل تایید‌شده در سیستم</div>
+                <div className="text-xl font-black text-white mt-1">
+                  {faces.filter(f => f.category === 'EMPLOYEE' || f.category === 'VIP').length} پرسنل
+                </div>
+                <div className="text-[10px] text-slate-500 font-sans mt-0.5">دایرکتوری بیومتریک</div>
+              </div>
+            </div>
+
+            {/* Attendance Check-in Modal */}
+            {showAttendanceModal && (
+              <div className="bg-[#121520] border border-[#D4AF37]/50 rounded-2xl p-6 shadow-2xl space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-[#D4AF37]" />
+                    <span>ثبت تردد پرسنل با تطبیق بردار چهره (Face Biometric Check-In)</span>
+                  </h4>
+                  <button onClick={() => setShowAttendanceModal(false)} className="text-slate-400 hover:text-white">✕</button>
+                </div>
+
+                <form onSubmit={handleAttendanceSubmit} className="space-y-4 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-slate-400 mb-1">پرسنل مورد نظر</label>
+                      <select
+                        value={attendanceForm.person_name}
+                        onChange={e => {
+                          const selected = faces.find(f => f.name === e.target.value);
+                          setAttendanceForm({
+                            ...attendanceForm,
+                            person_name: e.target.value,
+                            person_id: selected?.id || 'face-custom'
+                          });
+                        }}
+                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white"
+                      >
+                        {faces.map(f => (
+                          <option key={f.id} value={f.name}>{f.name} ({f.category})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">دوربین گیت ثبت‌کننده</label>
+                      <select
+                        value={attendanceForm.camera_id}
+                        onChange={e => setAttendanceForm({ ...attendanceForm, camera_id: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white"
+                      >
+                        {cameras.map(c => (
+                          <option key={c.id} value={c.id}>{c.name} ({c.zone})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">نوع تردد</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAttendanceForm({ ...attendanceForm, check_type: 'CHECK_IN' })}
+                          className={`py-2 rounded-xl font-bold transition ${
+                            attendanceForm.check_type === 'CHECK_IN' ? 'bg-emerald-500 text-black shadow' : 'bg-[#181B26] text-slate-400'
+                          }`}
+                        >
+                          ثبت ورود (Check-In)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAttendanceForm({ ...attendanceForm, check_type: 'CHECK_OUT' })}
+                          className={`py-2 rounded-xl font-bold transition ${
+                            attendanceForm.check_type === 'CHECK_OUT' ? 'bg-amber-500 text-black shadow' : 'bg-[#181B26] text-slate-400'
+                          }`}
+                        >
+                          ثبت خروج (Check-Out)
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">
+                        دقت تطابق چهره: {(attendanceForm.confidence * 100).toFixed(0)}%
+                      </label>
+                      <input
+                        type="range"
+                        min="0.80"
+                        max="0.99"
+                        step="0.01"
+                        value={attendanceForm.confidence}
+                        onChange={e => setAttendanceForm({ ...attendanceForm, confidence: parseFloat(e.target.value) })}
+                        className="w-full accent-[#D4AF37]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                    <button type="button" onClick={() => setShowAttendanceModal(false)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300">انصراف</button>
+                    <button type="submit" className="px-4 py-2 rounded-xl bg-[#D4AF37] text-black font-bold">تایید و ثبت تردد بیومتریک</button>
+                  </div>
+                </form>
+              </div>
+            )}
 
             <div className="bg-[#0F1118] border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
               <table className="w-full text-right text-xs">
@@ -1630,16 +1849,103 @@ export function App() {
 
         {/* TAB 5: FACILITY MANAGEMENT & BUILDING AUTOMATION */}
         {currentTab === 'facilities' && (
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Lightbulb className="w-4 h-4 text-[#D4AF37]" />
-                <span>مدیریت تاسیسات، تجهیزات هوشمند و اتوماسیون ساختمان</span>
-              </h3>
-              <p className="text-xs text-slate-400">
-                کنترل متمرکز روشنایی، قفل‌های الکترونیکی، سیستم تهویه، جک بازویی و پایش مصرف انرژی از طریق رله‌های مینی‌پی‌سی مکران.
-              </p>
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Lightbulb className="w-4 h-4 text-[#D4AF37]" />
+                  <span>مدیریت تاسیسات، تجهیزات هوشمند و اتوماسیون ساختمان</span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  کنترل متمرکز روشنایی، قفل‌های الکترونیکی، سیستم تهویه، جک بازویی و پایش مصرف انرژی از طریق رله‌های مینی‌پی‌سی مکران.
+                </p>
+              </div>
+
+              {/* Master Control Shortcuts */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => handleFacilityMaster('ALL_OFF')}
+                  className="px-3 py-1.5 rounded-xl bg-[#141722] hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition"
+                >
+                  <Power className="w-3.5 h-3.5 text-amber-400" />
+                  <span>خاموشی همه چراغ‌ها</span>
+                </button>
+                <button
+                  onClick={() => handleFacilityMaster('LOCKDOWN')}
+                  className="px-3 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-700 text-red-300 text-xs font-semibold flex items-center gap-1.5 transition"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>قرنطینه امنیتی (Lockdown)</span>
+                </button>
+                <button
+                  onClick={() => setShowAddFacilityModal(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition flex items-center gap-1.5 shadow"
+                >
+                  <span>+ افزودن رله / دستگاه جدید</span>
+                </button>
+              </div>
             </div>
+
+            {/* Add Facility Device Modal */}
+            {showAddFacilityModal && (
+              <div className="bg-[#121520] border border-[#D4AF37]/50 rounded-2xl p-6 shadow-2xl space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-[#D4AF37]" />
+                    <span>تعریف و پیکربندی رله هوشمند تاسیسات</span>
+                  </h4>
+                  <button onClick={() => setShowAddFacilityModal(false)} className="text-slate-400 hover:text-white">✕</button>
+                </div>
+
+                <form onSubmit={handleAddFacilitySubmit} className="space-y-4 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-slate-400 mb-1">نام دستگاه / رله</label>
+                      <input
+                        type="text"
+                        placeholder="مثال: روشنایی سوله شماره ۲"
+                        value={newFacility.name}
+                        onChange={e => setNewFacility({ ...newFacility, name: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">نوع تجهیز</label>
+                      <select
+                        value={newFacility.type}
+                        onChange={e => setNewFacility({ ...newFacility, type: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white"
+                      >
+                        <option value="LIGHT">روشنایی (Light Control)</option>
+                        <option value="HVAC">سیستم تهویه و سرمایش (HVAC)</option>
+                        <option value="SMART_LOCK">قفل برقی ضدسرقت (Smart Lock)</option>
+                        <option value="GATE">راهبند / جک بازویی خودرو (Smart Gate)</option>
+                        <option value="POWER_METER">پاورمتر و مانیتور مصرف برق</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">موقعیت و زون</label>
+                      <input
+                        type="text"
+                        placeholder="مثال: perimeter / entrance"
+                        value={newFacility.zone}
+                        onChange={e => setNewFacility({ ...newFacility, zone: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                    <button type="button" onClick={() => setShowAddFacilityModal(false)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300">انصراف</button>
+                    <button type="submit" className="px-4 py-2 rounded-xl bg-[#D4AF37] text-black font-bold">افزودن و فعال‌سازی رله</button>
+                  </div>
+                </form>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {facilities.map(dev => (
@@ -1782,6 +2088,61 @@ export function App() {
                 </div>
               </div>
             )}
+
+            {/* Hardware Orders History & Tracking */}
+            <div className="space-y-4 pt-4 border-t border-slate-800">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-[#D4AF37]" />
+                    <span>سفارشات و پیگیری ارسال تجهیزات (Hardware Orders & Delivery)</span>
+                  </h4>
+                  <p className="text-xs text-slate-400">پیگیری مراحل آماده‌سازی، برنامه‌ریزی فریم‌ور ایجنت و ارسال به سایت‌های مشتریان.</p>
+                </div>
+                <span className="text-xs text-[#ECC665] font-mono-num">{orders.length} سفارش ثبت‌شده</span>
+              </div>
+
+              <div className="bg-[#0F1118] border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-[#141722] text-slate-400 border-b border-slate-800">
+                    <tr>
+                      <th className="p-3.5">کد سفارش</th>
+                      <th className="p-3.5">متقاضی / شرکت</th>
+                      <th className="p-3.5">شماره تماس</th>
+                      <th className="p-3.5">مبلغ کل سفارش</th>
+                      <th className="p-3.5">وضعیت تامین</th>
+                      <th className="p-3.5 text-left">تاریخ ثبت</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/80 font-mono-num">
+                    {orders.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-4 text-center text-slate-500 font-sans">هیچ سفارشی ثبت نشده است</td>
+                      </tr>
+                    ) : (
+                      orders.map(ord => (
+                        <tr key={ord.id} className="hover:bg-[#131622] transition">
+                          <td className="p-3.5 font-bold text-[#ECC665]">{ord.id}</td>
+                          <td className="p-3.5 font-sans font-semibold text-white">{ord.customer_name}</td>
+                          <td className="p-3.5 text-slate-400">{ord.phone}</td>
+                          <td className="p-3.5 font-bold text-emerald-400">
+                            {ord.total_amount?.toLocaleString('fa-IR')} تومان
+                          </td>
+                          <td className="p-3.5 font-sans">
+                            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                              {ord.status === 'CONFIRMED' ? 'تایید و در حال آماده‌سازی' : ord.status}
+                            </span>
+                          </td>
+                          <td className="p-3.5 text-left text-slate-400 text-[11px]">
+                            {new Date(ord.created_at).toLocaleString('fa-IR')}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 
@@ -2068,6 +2429,103 @@ export function App() {
         {/* TAB 9: COMMERCIAL SAAS & CRM */}
         {currentTab === 'commercial' && (
           <div className="space-y-6">
+            {/* MULTI-TENANT SWITCHER & TENANT CREATION */}
+            <div className="bg-[#121520] border border-[#D4AF37]/40 rounded-2xl p-5 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div>
+                <div className="text-xs font-bold text-white flex items-center gap-2">
+                  <Building className="w-4 h-4 text-[#D4AF37]" />
+                  <span>سازمان و محیط مستأجر فعال (Active Multi-Tenant Environment)</span>
+                </div>
+                <div className="text-xs text-slate-400 mt-1">
+                  شناسه مستأجر کنونی: <span className="font-mono-num text-[#ECC665] font-bold">{user?.tenantId}</span> • نقش: <span className="text-white font-bold">{user?.role}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <select
+                  value={user?.tenantId}
+                  onChange={e => handleSwitchTenant(e.target.value)}
+                  className="px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-xs text-white font-bold"
+                >
+                  {tenantsList.length === 0 ? (
+                    <option value={user?.tenantId}>{user?.tenantId}</option>
+                  ) : (
+                    tenantsList.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({t.plan})
+                      </option>
+                    ))
+                  )}
+                </select>
+
+                <button
+                  onClick={() => setShowAddTenantModal(true)}
+                  className="px-3 py-2 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition flex items-center gap-1 shadow whitespace-nowrap"
+                >
+                  <span>+ افزودن سازمان جدید</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Add Tenant Modal */}
+            {showAddTenantModal && (
+              <div className="bg-[#121520] border border-[#D4AF37]/50 rounded-2xl p-6 shadow-2xl space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Building className="w-4 h-4 text-[#D4AF37]" />
+                    <span>تعریف و ایزوله‌سازی سازمان جدید در پلتفرم ابری مکران</span>
+                  </h4>
+                  <button onClick={() => setShowAddTenantModal(false)} className="text-slate-400 hover:text-white">✕</button>
+                </div>
+
+                <form onSubmit={handleCreateTenant} className="space-y-4 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-slate-400 mb-1">نام سازمان / شرکت</label>
+                      <input
+                        type="text"
+                        placeholder="مثال: مجتمع پتروشیمی نگین مکران"
+                        value={newTenant.name}
+                        onChange={e => setNewTenant({ ...newTenant, name: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">شناسه یکتا (Slug انگلیسی)</label>
+                      <input
+                        type="text"
+                        placeholder="مثال: negin-petro"
+                        value={newTenant.slug}
+                        onChange={e => setNewTenant({ ...newTenant, slug: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white font-mono-num"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">بسته اشتراک سازمانی</label>
+                      <select
+                        value={newTenant.plan}
+                        onChange={e => setNewTenant({ ...newTenant, plan: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white"
+                      >
+                        <option value="Enterprise Guard">Enterprise Guard (32 دوربین / AI نامحدود)</option>
+                        <option value="Commercial Pro">Commercial Pro (16 دوربین / AI پیشرفته)</option>
+                        <option value="Starter SME">Starter SME (8 دوربین / پایش اساسی)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                    <button type="button" onClick={() => setShowAddTenantModal(false)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300">انصراف</button>
+                    <button type="submit" className="px-4 py-2 rounded-xl bg-[#D4AF37] text-black font-bold">ایجاد و ایزولاسیون کامل دیتابیس سازمان</button>
+                  </div>
+                </form>
+              </div>
+            )}
+
             <div className="bg-[#0F1118] border border-[#D4AF37]/30 rounded-2xl p-6 shadow-xl">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
                 <div>

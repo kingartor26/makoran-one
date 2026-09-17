@@ -650,6 +650,47 @@ apiRouter.post('/facilities/:id/toggle', (req: AuthenticatedRequest, res) => {
   res.json({ success: true, id, state: newState });
 });
 
+// Create new Facility Device
+apiRouter.post('/facilities', (req: AuthenticatedRequest, res) => {
+  const { name, type, zone, agent_id } = req.body;
+  const id = 'fac-' + uuidv4().substring(0, 8);
+  const now = new Date().toISOString();
+
+  dbService.run(`
+    INSERT INTO facility_devices (id, tenant_id, agent_id, name, type, state, value, zone, last_updated)
+    VALUES (?, ?, ?, ?, ?, 'OFF', 0, ?, ?)
+  `, [
+    id,
+    req.tenantId,
+    agent_id || 'agent-mini-01',
+    name || 'دستگاه جدید تاسیسات',
+    type || 'LIGHT',
+    zone || 'general',
+    now
+  ]);
+
+  res.json({ success: true, id });
+});
+
+// Master Control (e.g. All Off, Security Lockdown)
+apiRouter.post('/facilities/master-control', (req: AuthenticatedRequest, res) => {
+  const { action } = req.body; // 'ALL_OFF' | 'ALL_ON' | 'LOCKDOWN'
+  const now = new Date().toISOString();
+
+  let targetState = 'OFF';
+  if (action === 'ALL_ON') targetState = 'ON';
+  if (action === 'LOCKDOWN') targetState = 'CLOSED';
+
+  dbService.run(`
+    UPDATE facility_devices
+    SET state = ?, last_updated = ?
+    WHERE tenant_id = ?
+  `, [targetState, now, req.tenantId]);
+
+  agentService.broadcastToClients('facility_master_state', { action, targetState, timestamp: now });
+  res.json({ success: true, action, targetState });
+});
+
 // --- E-COMMERCE PRODUCTS & ORDERS ---
 apiRouter.get('/ecommerce/products', (req: AuthenticatedRequest, res) => {
   const products = dbService.query('SELECT * FROM ecommerce_products ORDER BY price ASC');

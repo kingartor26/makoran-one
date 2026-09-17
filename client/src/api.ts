@@ -67,6 +67,13 @@ export class ApiClient {
     return this.request('/tenants');
   }
 
+  async createTenant(data: { name: string; slug?: string; plan?: string }) {
+    return this.request('/tenants', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
   async switchTenant(tenant_id: string) {
     const res = await this.request('/auth/switch-tenant', {
       method: 'POST',
@@ -255,6 +262,20 @@ export class ApiClient {
   // Facility & Automation
   async getFacilities() {
     return this.request('/facilities');
+  }
+
+  async addFacility(device: { name: string; type: string; zone: string; agent_id?: string }) {
+    return this.request('/facilities', {
+      method: 'POST',
+      body: JSON.stringify(device)
+    });
+  }
+
+  async facilityMasterControl(action: 'ALL_OFF' | 'ALL_ON' | 'LOCKDOWN') {
+    return this.request('/facilities/master-control', {
+      method: 'POST',
+      body: JSON.stringify({ action })
+    });
   }
 
   async toggleFacility(id: string, state?: string, value?: number) {
