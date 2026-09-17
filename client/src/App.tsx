@@ -45,6 +45,8 @@ export function App() {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [searchPersonName, setSearchPersonName] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [eventFilterType, setEventFilterType] = useState<string>('ALL');
+  const [eventSearchText, setEventSearchText] = useState<string>('');
   const [selectedEventModal, setSelectedEventModal] = useState<SecurityEvent | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(true);
@@ -663,6 +665,45 @@ export function App() {
     } catch (err: any) {
       showToast(err.message, 'error');
     }
+  };
+
+  // Export Events to CSV
+  const handleExportEventsCSV = () => {
+    if (events.length === 0) {
+      showToast('رویدادی برای استخراج وجود ندارد', 'info');
+      return;
+    }
+    const headers = ['ID', 'Event Type', 'Camera', 'Zone', 'Label', 'Confidence', 'Alarm Triggered', 'Timestamp'];
+    const rows = events.map(e => [
+      e.id,
+      e.event_type,
+      e.camera_name || e.camera_id,
+      e.zone || '',
+      `"${(e.label || '').replace(/"/g, '""')}"`,
+      e.confidence,
+      e.alarm_triggered ? 'YES' : 'NO',
+      e.created_at
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const dl = document.createElement('a');
+    dl.setAttribute('href', encodeURI(csvContent));
+    dl.setAttribute('download', `makoran_events_${Date.now()}.csv`);
+    dl.click();
+    showToast('گزارش اکسل/CSV رویدادها با موفقیت صادر شد', 'success');
+  };
+
+  // Export Events to JSON
+  const handleExportEventsJSON = () => {
+    if (events.length === 0) {
+      showToast('رویدادی برای استخراج وجود ندارد', 'info');
+      return;
+    }
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(events, null, 2));
+    const dl = document.createElement('a');
+    dl.setAttribute('href', dataStr);
+    dl.setAttribute('download', `makoran_events_${Date.now()}.json`);
+    dl.click();
+    showToast('فایل JSON رویدادها صادر شد', 'success');
   };
 
   // Submissions
@@ -1312,7 +1353,7 @@ export function App() {
         {/* TAB 2: EVENTS & ALARMS */}
         {currentTab === 'events' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <Activity className="w-5 h-5 text-[#D4AF37]" />
@@ -1320,18 +1361,97 @@ export function App() {
                 </h3>
                 <p className="text-xs text-slate-400">تمامی رویدادهای تصویری پس از پردازش هوش مصنوعی در سرور و تایید موتور قوانین در این بخش بایگانی می‌شوند.</p>
               </div>
-              <button onClick={loadAllData} className="px-3 py-1.5 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 text-xs font-semibold text-slate-300 flex items-center gap-1.5 transition">
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>بروزرسانی</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportEventsCSV}
+                  className="px-3 py-1.5 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-1.5 transition"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>خروجی CSV</span>
+                </button>
+                <button
+                  onClick={handleExportEventsJSON}
+                  className="px-3 py-1.5 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-1.5 transition"
+                >
+                  <span>خروجی JSON</span>
+                </button>
+                <button onClick={loadAllData} className="px-3 py-1.5 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 text-xs font-semibold text-slate-300 flex items-center gap-1.5 transition">
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>بروزرسانی</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Filter and Search Bar */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-[#11131C] p-3 rounded-2xl border border-slate-800">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[
+                  { id: 'ALL', label: 'همه رویدادها' },
+                  { id: 'human', label: 'انسان (Human)' },
+                  { id: 'face', label: 'چهره (Face)' },
+                  { id: 'vehicle', label: 'خودرو (Vehicle)' },
+                  { id: 'plate', label: 'پلاک‌خوان (LPR)' },
+                  { id: 'alarm', label: 'فقط آژیرها (Alarms)' }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setEventFilterType(tab.id)}
+                    className={`px-3 py-1 rounded-xl text-xs font-semibold transition ${
+                      eventFilterType === tab.id
+                        ? 'bg-[#D4AF37] text-black shadow font-bold'
+                        : 'bg-[#181B26] text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="w-full sm:w-72">
+                <input
+                  type="text"
+                  placeholder="جستجوی عنوان، دوربین یا زون..."
+                  value={eventSearchText}
+                  onChange={e => setEventSearchText(e.target.value)}
+                  className="w-full px-3 py-1.5 rounded-xl bg-[#181B26] border border-slate-700 text-xs text-white"
+                />
+              </div>
             </div>
 
             <div className="bg-[#0F1118] border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
               <div className="divide-y divide-slate-800/80">
-                {events.length === 0 ? (
-                  <div className="p-8 text-center text-slate-500 text-xs">هیچ رویدادی ثبت نشده است.</div>
+                {events.filter(ev => {
+                  if (eventFilterType === 'human' && !ev.event_type.includes('human')) return false;
+                  if (eventFilterType === 'face' && !ev.event_type.includes('face')) return false;
+                  if (eventFilterType === 'vehicle' && !ev.event_type.includes('vehicle')) return false;
+                  if (eventFilterType === 'plate' && !ev.event_type.includes('plate')) return false;
+                  if (eventFilterType === 'alarm' && !ev.alarm_triggered) return false;
+                  if (eventSearchText) {
+                    const q = eventSearchText.toLowerCase();
+                    const matchLabel = ev.label?.toLowerCase().includes(q);
+                    const matchCam = (ev.camera_name || ev.camera_id)?.toLowerCase().includes(q);
+                    const matchZone = ev.zone?.toLowerCase().includes(q);
+                    if (!matchLabel && !matchCam && !matchZone) return false;
+                  }
+                  return true;
+                }).length === 0 ? (
+                  <div className="p-8 text-center text-slate-500 text-xs">هیچ رویدادی مطابق با فیلترها یافت نشد.</div>
                 ) : (
-                  events.map(ev => (
+                  events.filter(ev => {
+                    if (eventFilterType === 'human' && !ev.event_type.includes('human')) return false;
+                    if (eventFilterType === 'face' && !ev.event_type.includes('face')) return false;
+                    if (eventFilterType === 'vehicle' && !ev.event_type.includes('vehicle')) return false;
+                    if (eventFilterType === 'plate' && !ev.event_type.includes('plate')) return false;
+                    if (eventFilterType === 'alarm' && !ev.alarm_triggered) return false;
+                    if (eventSearchText) {
+                      const q = eventSearchText.toLowerCase();
+                      const matchLabel = ev.label?.toLowerCase().includes(q);
+                      const matchCam = (ev.camera_name || ev.camera_id)?.toLowerCase().includes(q);
+                      const matchZone = ev.zone?.toLowerCase().includes(q);
+                      if (!matchLabel && !matchCam && !matchZone) return false;
+                    }
+                    return true;
+                  }).map(ev => (
                     <div
                       key={ev.id}
                       onClick={() => setSelectedEventModal(ev)}
@@ -2321,7 +2441,57 @@ export function App() {
 
         {/* TAB 8: BIOMETRICS & LPR */}
         {currentTab === 'biometrics' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-6">
+            {/* BIOMETRIC & LPR TIMELINE SEARCH */}
+            <div className="bg-[#11131C] border border-[#D4AF37]/40 rounded-2xl p-4 shadow-xl space-y-3">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-[#D4AF37]" />
+                    <span>کاوشگر سوابق تردد و رویت چهره/پلاک (Sighting Timeline Search)</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">جستجوی بلادرنگ در تاریخچه عبور خودروها یا افراد شناسایی‌شده در کلیه دوربین‌های محوطه.</p>
+                </div>
+
+                <form onSubmit={handleSearchFace} className="flex items-center gap-2 w-full sm:w-auto">
+                  <input
+                    type="text"
+                    placeholder="نام شخص یا شماره پلاک (مثال: رضا یا 85ج124)..."
+                    value={searchPersonName}
+                    onChange={e => setSearchPersonName(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl bg-[#181B26] border border-slate-700 text-xs text-white w-full sm:w-64"
+                  />
+                  <button type="submit" className="px-3.5 py-1.5 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition flex items-center gap-1 shadow whitespace-nowrap">
+                    <span>جستجو</span>
+                  </button>
+                </form>
+              </div>
+
+              {/* Search Results Timeline */}
+              {searchResults.length > 0 && (
+                <div className="pt-3 border-t border-slate-800">
+                  <div className="flex items-center justify-between pb-2">
+                    <span className="text-xs font-bold text-[#ECC665]">{searchResults.length} رخداد تردد یافت شد:</span>
+                    <button onClick={() => setSearchResults([])} className="text-[10px] text-slate-400 hover:text-white">بستن نتایج ✕</button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {searchResults.map((sr, idx) => (
+                      <div key={idx} className="bg-[#181B26] p-2.5 rounded-xl border border-slate-800 text-xs flex items-center justify-between">
+                        <div>
+                          <div className="font-bold text-white text-[11px] truncate max-w-[170px]">{sr.label}</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">دوربین: {sr.camera_name || sr.camera_id} • زون: {sr.zone}</div>
+                        </div>
+                        <div className="text-left font-mono-num text-[10px] text-slate-400">
+                          {new Date(sr.created_at).toLocaleTimeString('fa-IR')}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -2423,6 +2593,7 @@ export function App() {
                 ))}
               </div>
             </div>
+          </div>
           </div>
         )}
 

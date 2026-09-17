@@ -65,10 +65,11 @@ async function runTests() {
   // Test 4: Tenant Creation & Isolation
   console.log('[Test 4] Multi-Tenant Organization Creation...');
   const newTenantId = 'tenant-test-' + Date.now();
+  const testSlug = 'makoran-steel-' + Date.now();
   dbService.run(`
     INSERT INTO tenants (id, name, slug, plan, status, created_at)
-    VALUES (?, 'مجتمع فولاد مکران', 'makoran-steel', 'Enterprise Guard', 'ACTIVE', ?)
-  `, [newTenantId, now]);
+    VALUES (?, 'مجتمع فولاد مکران', ?, 'Enterprise Guard', 'ACTIVE', ?)
+  `, [newTenantId, testSlug, now]);
 
   const createdTenant = dbService.queryOne('SELECT * FROM tenants WHERE id = ?', [newTenantId]);
   assert(createdTenant, 'Expected newly created tenant to exist');
