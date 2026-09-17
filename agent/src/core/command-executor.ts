@@ -32,6 +32,13 @@ export class CommandExecutor {
         return { success: true, result: 'Buzzer beep executed' };
       }
 
+      case 'ptz_command': {
+        const action = cmd.parameters?.action || 'stop'; // left, right, up, down, zoom_in, zoom_out, preset
+        const speed = cmd.parameters?.speed || 5;
+        console.log(`[CCTV PTZ] Camera ${cmd.channel_id} executing PTZ action: ${action} at speed ${speed}`);
+        return { success: true, result: `PTZ action ${action} executed on ${cmd.channel_id}` };
+      }
+
       case 'ota_update': {
         const version = cmd.parameters?.version || '1.3.0';
         const checksum = cmd.parameters?.checksum || 'sha256:valid';

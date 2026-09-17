@@ -362,6 +362,16 @@ export function App() {
     }
   };
 
+  // PTZ Control
+  const handlePTZ = async (cameraId: string, action: string) => {
+    try {
+      await api.sendPTZ(cameraId, action);
+      showToast(`فرمان چرخش دوربین (${action}) ارسال شد`, 'info');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
   // Submissions
   const handleAddCamera = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -805,6 +815,20 @@ export function App() {
                               <div className="text-[10px] text-slate-400 mt-0.5 font-mono-num">
                                 Session: {activeLiveStreams[cam.id].sessionId}
                               </div>
+                            </div>
+
+                            {/* Floating PTZ & Preset Controls on Active Stream */}
+                            <div className="absolute bottom-2 left-2 z-20 bg-black/70 backdrop-blur-md p-1.5 rounded-xl border border-slate-700/80 flex items-center gap-1 shadow-lg">
+                              <button onClick={() => handlePTZ(cam.id, 'pan_left')} title="چرخش به چپ" className="p-1 hover:bg-[#D4AF37] hover:text-black rounded text-[10px] text-slate-300 transition">◀</button>
+                              <button onClick={() => handlePTZ(cam.id, 'tilt_up')} title="چرخش به بالا" className="p-1 hover:bg-[#D4AF37] hover:text-black rounded text-[10px] text-slate-300 transition">▲</button>
+                              <button onClick={() => handlePTZ(cam.id, 'tilt_down')} title="چرخش به پایین" className="p-1 hover:bg-[#D4AF37] hover:text-black rounded text-[10px] text-slate-300 transition">▼</button>
+                              <button onClick={() => handlePTZ(cam.id, 'pan_right')} title="چرخش به راست" className="p-1 hover:bg-[#D4AF37] hover:text-black rounded text-[10px] text-slate-300 transition">▶</button>
+                              <div className="w-px h-3 bg-slate-600 mx-0.5"></div>
+                              <button onClick={() => handlePTZ(cam.id, 'zoom_in')} title="بزرگنمایی Zoom +" className="px-1.5 py-0.5 hover:bg-[#D4AF37] hover:text-black rounded text-[10px] font-mono-num text-slate-300 transition">+</button>
+                              <button onClick={() => handlePTZ(cam.id, 'zoom_out')} title="کوچک‌نمایی Zoom -" className="px-1.5 py-0.5 hover:bg-[#D4AF37] hover:text-black rounded text-[10px] font-mono-num text-slate-300 transition">-</button>
+                              <div className="w-px h-3 bg-slate-600 mx-0.5"></div>
+                              <button onClick={() => handlePTZ(cam.id, 'preset_1')} title="پریست ۱: گیت ورودی" className="px-1.5 py-0.5 hover:bg-[#ECC665] hover:text-black rounded text-[9px] font-bold text-slate-400 transition">P1</button>
+                              <button onClick={() => handlePTZ(cam.id, 'preset_2')} title="پریست ۲: دیوار پیرامونی" className="px-1.5 py-0.5 hover:bg-[#ECC665] hover:text-black rounded text-[9px] font-bold text-slate-400 transition">P2</button>
                             </div>
                           </div>
                         ) : (

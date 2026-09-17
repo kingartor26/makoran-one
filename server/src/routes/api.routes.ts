@@ -176,6 +176,27 @@ apiRouter.post('/cameras', (req: AuthenticatedRequest, res) => {
   res.json({ id, success: true });
 });
 
+// --- CAMERA PTZ CONTROL ---
+apiRouter.post('/cameras/:id/ptz', (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  const { action, speed } = req.body;
+
+  const camera = dbService.queryOne('SELECT * FROM cameras WHERE id = ? AND tenant_id = ?', [id, req.tenantId]);
+  if (!camera) {
+    res.status(404).json({ error: 'دوربین یافت نشد' });
+    return;
+  }
+
+  const dispatched = agentService.sendCommand(camera.agent_id, {
+    command: 'ptz_command' as any,
+    channel_id: id,
+    parameters: { action, speed: speed || 5 },
+    issued_at: new Date().toISOString()
+  });
+
+  res.json({ success: dispatched, action, camera_id: id });
+});
+
 // --- AI GATEWAY & SNAPSHOT INGESTION ---
 apiRouter.post('/ai/process', async (req: AuthenticatedRequest, res) => {
   try {

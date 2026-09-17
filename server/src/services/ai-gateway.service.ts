@@ -6,6 +6,7 @@ import {
   AIProcessResponse,
   DetectionResult,
   DetectionType,
+  PriorityLevel,
   AgentActionCommand
 } from '@makoran/shared';
 import { dbService } from '../database/db';
@@ -13,7 +14,28 @@ import { ruleEngineService } from './rule-engine.service';
 
 const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
 
+// Pluggable AI Model Drivers Interface
+export interface ModelDriver {
+  name: string;
+  version: string;
+  detect(imageBuffer: Buffer, options?: any): Promise<DetectionResult[]>;
+}
+
+export interface QueuedAITask {
+  id: string;
+  priority: PriorityLevel;
+  request: AIProcessRequest;
+  resolve: (res: AIProcessResponse) => void;
+  reject: (err: any) => void;
+  enqueuedAt: number;
+}
+
 export class AIGatewayService {
+  private queue: QueuedAITask[] = [];
+  private isProcessing = false;
+  private maxConcurrentTasks = 4;
+  private activeTasksCount = 0;
+
   constructor() {
     if (!fs.existsSync(UPLOADS_DIR)) {
       fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -21,13 +43,76 @@ export class AIGatewayService {
   }
 
   /**
-   * Main entrypoint for processing camera snapshots through AI Gateway
+   * Enqueue snapshot request with Priority Queue support
+   * CRITICAL > HIGH > NORMAL > LOW
    */
   public async processImage(req: AIProcessRequest): Promise<AIProcessResponse> {
+    const priority = req.priority || 'NORMAL';
+
+    return new Promise<AIProcessResponse>((resolve, reject) => {
+      const task: QueuedAITask = {
+        id: req.request_id || 'TASK-' + uuidv4().substring(0, 8),
+        priority,
+        request: req,
+        resolve,
+        reject,
+        enqueuedAt: Date.now()
+      };
+
+      this.insertByPriority(task);
+      this.drainQueue();
+    });
+  }
+
+  private insertByPriority(task: QueuedAITask): void {
+    const weight: Record<PriorityLevel, number> = {
+      CRITICAL: 4,
+      HIGH: 3,
+      NORMAL: 2,
+      LOW: 1
+    };
+
+    // Insert task in sorted position so highest priority is at front
+    const taskWeight = weight[task.priority];
+    let inserted = false;
+    for (let i = 0; i < this.queue.length; i++) {
+      if (taskWeight > weight[this.queue[i].priority]) {
+        this.queue.splice(i, 0, task);
+        inserted = true;
+        break;
+      }
+    }
+    if (!inserted) {
+      this.queue.push(task);
+    }
+  }
+
+  private async drainQueue(): Promise<void> {
+    if (this.activeTasksCount >= this.maxConcurrentTasks || this.queue.length === 0) {
+      return;
+    }
+
+    const task = this.queue.shift();
+    if (!task) return;
+
+    this.activeTasksCount++;
+
+    try {
+      const result = await this.executeInference(task.request);
+      task.resolve(result);
+    } catch (err) {
+      task.reject(err);
+    } finally {
+      this.activeTasksCount--;
+      this.drainQueue();
+    }
+  }
+
+  private async executeInference(req: AIProcessRequest): Promise<AIProcessResponse> {
     const startTime = Date.now();
     const requestId = req.request_id || 'REQ-' + uuidv4().substring(0, 8);
 
-    // 1. Persist or save image reference
+    // 1. Save or locate snapshot
     let snapshotUrl = req.image_url || '';
     if (req.image_base64) {
       const fileName = `snap_${req.camera_id}_${Date.now()}.jpg`;
@@ -36,47 +121,41 @@ export class AIGatewayService {
       fs.writeFileSync(filePath, buffer);
       snapshotUrl = `/uploads/${fileName}`;
     } else if (!snapshotUrl) {
-      // Default placeholder if none provided
       snapshotUrl = `/assets/snapshots/camera-${req.camera_id}.jpg`;
     }
 
-    // 2. Fetch Camera and Zone Context
+    // 2. Camera Context & Zone
     const camera = dbService.queryOne('SELECT * FROM cameras WHERE id = ? AND tenant_id = ?', [
       req.camera_id,
       req.tenant_id
     ]);
     const zone = camera?.zone || 'entrance';
 
-    // 3. Run Inference Engines based on requested event type or camera config
+    // 3. Multi-Model Inference Dispatcher
     const detections: DetectionResult[] = [];
     const eventType = req.event_type;
 
     if (eventType === 'human_detected' || eventType === 'auto_detect') {
-      const humanDetections = this.detectHumans(req);
-      detections.push(...humanDetections);
+      detections.push(...this.detectHumans(req));
     }
 
     if (eventType === 'face_detected' || eventType === 'unknown_face' || eventType === 'vip_face' || eventType === 'blocked_face' || eventType === 'auto_detect') {
-      const faceDetections = this.detectAndRecognizeFaces(req);
-      detections.push(...faceDetections);
+      detections.push(...this.detectAndRecognizeFaces(req));
     }
 
     if (eventType === 'vehicle_detected' || eventType === 'auto_detect') {
-      const vehicleDetections = this.detectVehicles(req);
-      detections.push(...vehicleDetections);
+      detections.push(...this.detectVehicles(req));
     }
 
     if (eventType === 'license_plate' || eventType === 'blocked_plate' || eventType === 'auto_detect') {
-      const lprDetections = this.detectLicensePlates(req);
-      detections.push(...lprDetections);
+      detections.push(...this.detectLicensePlates(req));
     }
 
-    // Calculate overall confidence
     const confidence = detections.length > 0
       ? Math.max(...detections.map(d => d.confidence))
       : 0.94;
 
-    // 4. Send to Server-Side Security Rule Engine for Decision Making
+    // 4. Server-Side Rule Engine Evaluation
     const evaluation = await ruleEngineService.evaluateEvent({
       tenant_id: req.tenant_id,
       agent_id: req.agent_id,
@@ -88,7 +167,7 @@ export class AIGatewayService {
 
     const processingTimeMs = Date.now() - startTime;
 
-    const response: AIProcessResponse = {
+    return {
       request_id: requestId,
       tenant_id: req.tenant_id,
       camera_id: req.camera_id,
@@ -100,11 +179,9 @@ export class AIGatewayService {
       processing_time_ms: processingTimeMs,
       timestamp: new Date().toISOString()
     };
-
-    return response;
   }
 
-  // --- Sub-Engines ---
+  // --- Specialized Detection Sub-Engines ---
 
   private detectHumans(req: AIProcessRequest): DetectionResult[] {
     return [
@@ -130,10 +207,11 @@ export class AIGatewayService {
   }
 
   private detectAndRecognizeFaces(req: AIProcessRequest): DetectionResult[] {
-    // Check Tenant Face Directory to perform 1:N Recognition
-    const registeredFaces = dbService.query('SELECT * FROM faces WHERE tenant_id = ? AND active = 1', [req.tenant_id]);
-    
-    // Check if specifically testing a blocked or VIP face
+    const registeredFaces = dbService.query(
+      'SELECT * FROM faces WHERE tenant_id = ? AND active = 1',
+      [req.tenant_id]
+    );
+
     let matchedFace = null;
     let type: DetectionType = 'unknown_face';
     let label = 'چهره ناشناس (Unknown Face)';
@@ -147,7 +225,6 @@ export class AIGatewayService {
       type = 'blocked_face';
       label = matchedFace ? `هشدار چهره مسدود شده: ${matchedFace.name}` : 'فرد در لیست سیاه';
     } else if (registeredFaces.length > 0 && Math.random() > 0.4) {
-      // Sample match
       matchedFace = registeredFaces[0];
       type = matchedFace.category === 'BLOCKED' ? 'blocked_face' : 'face_detected';
       label = `چهره شناسایی شده: ${matchedFace.name} (${matchedFace.category})`;
@@ -197,9 +274,11 @@ export class AIGatewayService {
   }
 
   private detectLicensePlates(req: AIProcessRequest): DetectionResult[] {
-    // Check against tenant's registered license plates
-    const plates = dbService.query('SELECT * FROM license_plates WHERE tenant_id = ? AND active = 1', [req.tenant_id]);
-    
+    const plates = dbService.query(
+      'SELECT * FROM license_plates WHERE tenant_id = ? AND active = 1',
+      [req.tenant_id]
+    );
+
     let chosenPlate = plates[0] || { plate_number: '85ج124-ایران85', category: 'ALLOWED', owner_name: 'مهندس مکرانی' };
     if (req.event_type === 'blocked_plate') {
       const blocked = plates.find(p => p.category === 'BLOCKED');
@@ -224,10 +303,15 @@ export class AIGatewayService {
           plate_number: chosenPlate.plate_number,
           owner: chosenPlate.owner_name,
           category: chosenPlate.category,
-          vehicle_model: chosenPlate.vehicle_model
+          vehicle_model: chosenPlate.vehicle_model,
+          standard: 'IRAN_STANDARD_LPR'
         }
       }
     ];
+  }
+
+  public getQueueLength(): number {
+    return this.queue.length;
   }
 }
 

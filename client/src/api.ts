@@ -105,6 +105,13 @@ export class ApiClient {
     });
   }
 
+  async sendPTZ(cameraId: string, action: string, speed = 5) {
+    return this.request(`/cameras/${cameraId}/ptz`, {
+      method: 'POST',
+      body: JSON.stringify({ action, speed })
+    });
+  }
+
   // AI & Snapshots
   async processAI(payload: { camera_id: string; agent_id?: string; event_type?: string; image_base64?: string }) {
     return this.request('/ai/process', {

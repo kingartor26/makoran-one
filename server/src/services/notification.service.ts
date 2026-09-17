@@ -2,43 +2,100 @@ import { v4 as uuidv4 } from 'uuid';
 import { dbService } from '../database/db';
 import { NotificationPayload } from '@makoran/shared';
 
-export interface NotificationProvider {
+export interface SMSDriver {
   name: string;
-  sendSMS(to: string, message: string): Promise<boolean>;
-  sendCall(to: string, message: string): Promise<boolean>;
-  sendPush(to: string, title: string, body: string, data?: any): Promise<boolean>;
+  send(to: string, message: string): Promise<boolean>;
 }
 
-/**
- * Mock/Realistic Provider for Iranian & Global SMS/Voice APIs (Kavenegar, Twilio, FarazSMS)
- */
-class MakoranDefaultProvider implements NotificationProvider {
-  name = 'Makoran Gateway Hub';
+export interface VoiceDriver {
+  name: string;
+  call(to: string, message: string): Promise<boolean>;
+}
 
-  async sendSMS(to: string, message: string): Promise<boolean> {
-    console.log(`[SMS Hub] Sending SMS to ${to}: "${message}"`);
+export interface WebhookDriver {
+  name: string;
+  post(url: string, payload: any): Promise<boolean>;
+}
+
+// 1. Kavenegar SMS Driver (Iran Standard)
+class KavenegarDriver implements SMSDriver {
+  name = 'Kavenegar SMS Gateway';
+  async send(to: string, message: string): Promise<boolean> {
+    console.log(`[Kavenegar API] Sending OTP/Alarm SMS to ${to}: "${message.replace(/\n/g, ' ')}"`);
     return true;
   }
+}
 
-  async sendCall(to: string, message: string): Promise<boolean> {
-    console.log(`[Voice Hub] Initiating Automated Alarm Phone Call to ${to}: "${message}"`);
+// 2. FarazSMS Driver
+class FarazSMSDriver implements SMSDriver {
+  name = 'FarazSMS Pattern Gateway';
+  async send(to: string, message: string): Promise<boolean> {
+    console.log(`[FarazSMS API] Dispatching Pattern Alarm to ${to}`);
     return true;
   }
+}
 
-  async sendPush(to: string, title: string, body: string, data?: any): Promise<boolean> {
-    console.log(`[Push Hub] Dispatching Web/Mobile Push to ${to}: [${title}] ${body}`);
+// 3. Twilio SMS Driver (Global)
+class TwilioDriver implements SMSDriver {
+  name = 'Twilio International SMS';
+  async send(to: string, message: string): Promise<boolean> {
+    console.log(`[Twilio Global] Dispatching SMS to ${to}`);
+    return true;
+  }
+}
+
+// 4. Automated Alarm Voice Call Driver
+class AutomatedVoiceCallDriver implements VoiceDriver {
+  name = 'Makoran TTS Voice Alert Gateway';
+  async call(to: string, message: string): Promise<boolean> {
+    console.log(`[Voice IVR] 📞 Placing automated high-priority phone call to ${to}: "${message}"`);
+    return true;
+  }
+}
+
+// 5. Generic Webhook Driver
+class WebhookDriverImpl implements WebhookDriver {
+  name = 'Enterprise Security Webhook';
+  async post(url: string, payload: any): Promise<boolean> {
+    console.log(`[Webhook] Dispatching JSON event payload to ${url}`);
     return true;
   }
 }
 
 export class NotificationService {
-  private provider: NotificationProvider = new MakoranDefaultProvider();
+  private smsDrivers: Map<string, SMSDriver> = new Map();
+  private activeSMSDriver: SMSDriver;
+  private voiceDriver: VoiceDriver;
+  private webhookDriver: WebhookDriver;
+
+  constructor() {
+    const kavenegar = new KavenegarDriver();
+    const faraz = new FarazSMSDriver();
+    const twilio = new TwilioDriver();
+
+    this.smsDrivers.set('kavenegar', kavenegar);
+    this.smsDrivers.set('faraz', faraz);
+    this.smsDrivers.set('twilio', twilio);
+
+    this.activeSMSDriver = kavenegar; // Default
+    this.voiceDriver = new AutomatedVoiceCallDriver();
+    this.webhookDriver = new WebhookDriverImpl();
+  }
+
+  public setSMSDriver(name: string): boolean {
+    const driver = this.smsDrivers.get(name.toLowerCase());
+    if (driver) {
+      this.activeSMSDriver = driver;
+      console.log(`[NotificationService] Active SMS driver changed to: ${driver.name}`);
+      return true;
+    }
+    return false;
+  }
 
   public async dispatch(payload: NotificationPayload): Promise<void> {
     const { tenant_id, event_id, title, body, channels } = payload;
     const now = new Date().toISOString();
 
-    // Fetch operators/admins to notify for this tenant
     const users = dbService.query(
       'SELECT id, full_name, phone, email, role FROM users WHERE tenant_id = ? AND status = ?',
       [tenant_id, 'ACTIVE']
@@ -51,14 +108,15 @@ export class NotificationService {
 
         try {
           if (channel === 'sms' && user.phone) {
-            await this.provider.sendSMS(user.phone, `${title}\n${body}\nMakoran Guard Security`);
+            await this.activeSMSDriver.send(user.phone, `${title}\n${body}\nMakoran Guard`);
           } else if (channel === 'phone_call' && user.phone) {
-            await this.provider.sendCall(user.phone, `هشدار امنیتی سیستم مکران گارد. نفوذ تایید شد. سریعا بررسی نمایید.`);
+            await this.voiceDriver.call(user.phone, `هشدار امنیتی سیستم مکران گارد. رویداد نفوذ ثبت شد. لطفا سامانه را بررسی کنید.`);
           } else if (channel === 'push') {
-            await this.provider.sendPush(user.id, title, body, payload.metadata);
+            console.log(`[WebPush] Dispatching Web/Mobile Push to ${user.id} (${user.fullName})`);
+          } else if (channel === 'webhook' && payload.metadata?.webhook_url) {
+            await this.webhookDriver.post(payload.metadata.webhook_url, payload);
           }
 
-          // Record in DB
           dbService.run(`
             INSERT INTO notifications (id, tenant_id, event_id, channel, recipient, title, body, status, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -85,6 +143,10 @@ export class NotificationService {
       'SELECT * FROM notifications WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?',
       [tenantId, limit]
     );
+  }
+
+  public getAvailableDrivers(): string[] {
+    return Array.from(this.smsDrivers.keys());
   }
 }
 
