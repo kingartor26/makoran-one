@@ -290,6 +290,19 @@ export class ApiClient {
     return this.request('/ecommerce/products');
   }
 
+  async addProduct(product: any) {
+    return this.request('/ecommerce/products', {
+      method: 'POST',
+      body: JSON.stringify(product)
+    });
+  }
+
+  async deleteProduct(id: string) {
+    return this.request(`/ecommerce/products/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
   async getShopOrders() {
     return this.request('/ecommerce/orders');
   }
@@ -299,6 +312,43 @@ export class ApiClient {
       method: 'POST',
       body: JSON.stringify(order)
     });
+  }
+
+  async updateOrderStatus(id: string, status: string) {
+    return this.request(`/ecommerce/orders/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status })
+    });
+  }
+
+  // Users Management (RBAC)
+  async getUsers() {
+    return this.request('/users');
+  }
+
+  async createUser(user: any) {
+    return this.request('/users', {
+      method: 'POST',
+      body: JSON.stringify(user)
+    });
+  }
+
+  async deleteUser(id: string) {
+    return this.request(`/users/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async updateUserRole(id: string, role: string, status?: string) {
+    return this.request(`/users/${id}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role, status })
+    });
+  }
+
+  // Platform Settings
+  async getSettings() {
+    return this.request('/settings');
   }
 
   // Billing & CRM

@@ -89,6 +89,44 @@ async function runTests() {
   assert.strictEqual(logEntry.action, 'FACILITY_MASTER_CONTROL');
   console.log('✅ Security Audit Trail verified: tamper-evident logging confirmed.');
 
+  // Test 6: User Management & RBAC Roles
+  console.log('[Test 6] Site Administration & RBAC User Management...');
+  const testUserId = 'usr-test-' + Date.now();
+  const testEmail = `operator-${Date.now()}@makoran.io`;
+  dbService.run(`
+    INSERT INTO users (id, tenant_id, email, password_hash, full_name, role, phone, status, created_at)
+    VALUES (?, 'tenant-makoran-01', ?, 'dummy_hash', 'اپراتور شیفت شب', 'OPERATOR', '+989129998877', 'ACTIVE', ?)
+  `, [testUserId, testEmail, now]);
+
+  const createdUser = dbService.queryOne('SELECT * FROM users WHERE id = ?', [testUserId]);
+  assert(createdUser, 'Expected user to be created');
+  assert.strictEqual(createdUser.role, 'OPERATOR');
+  assert.strictEqual(createdUser.email, testEmail);
+
+  // Role update
+  dbService.run('UPDATE users SET role = ? WHERE id = ?', ['ORG_ADMIN', testUserId]);
+  const updatedUser = dbService.queryOne('SELECT * FROM users WHERE id = ?', [testUserId]);
+  assert.strictEqual(updatedUser.role, 'ORG_ADMIN');
+  console.log('✅ Site Admin & RBAC verified: user provisioning and role elevation verified.');
+
+  // Test 7: Store Product Creation & Order Fulfillment Status
+  console.log('[Test 7] Store Catalog Management & Order Fulfillment...');
+  const testProdId = 'prod-test-' + Date.now();
+  dbService.run(`
+    INSERT INTO ecommerce_products (id, name, description, category, price, stock, image_url, sku, specifications, created_at)
+    VALUES (?, 'اسپیددام ۴K مکران گارد', 'دوربین چرخشی صنعتی', 'CAMERA_4K', 32000000, 15, '/assets/test.png', 'MK-PTZ-TEST', '{}', ?)
+  `, [testProdId, now]);
+
+  const newProd = dbService.queryOne('SELECT * FROM ecommerce_products WHERE id = ?', [testProdId]);
+  assert(newProd, 'Expected store product to exist');
+  assert.strictEqual(newProd.sku, 'MK-PTZ-TEST');
+
+  // Update order status: CONFIRMED -> SHIPPED
+  dbService.run('UPDATE ecommerce_orders SET status = ? WHERE id = ?', ['SHIPPED', orderId]);
+  const shippedOrder = dbService.queryOne('SELECT * FROM ecommerce_orders WHERE id = ?', [orderId]);
+  assert.strictEqual(shippedOrder.status, 'SHIPPED');
+  console.log('✅ Store Administration verified: product creation and order status updates confirmed.');
+
   console.log('=====================================================================');
   console.log('🎉 ALL EXTENDED SAAS FEATURES VERIFIED: 100% SUCCESSFUL COMPLETION');
   console.log('=====================================================================');

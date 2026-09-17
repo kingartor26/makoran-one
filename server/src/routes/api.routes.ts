@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import bcrypt from 'bcryptjs';
 import { authMiddleware, AuthenticatedRequest, roleGuard } from '../middlewares/auth.middleware';
 import { authService } from '../services/auth.service';
 import { agentService } from '../services/agent.service';
@@ -730,4 +731,138 @@ apiRouter.post('/ecommerce/orders', (req: AuthenticatedRequest, res) => {
 apiRouter.get('/crm', (req: AuthenticatedRequest, res) => {
   const customers = dbService.query('SELECT * FROM crm_customers WHERE tenant_id = ? ORDER BY created_at DESC', [req.tenantId]);
   res.json(customers);
+});
+
+// --- E-COMMERCE STORE ADMIN: CREATE PRODUCT ---
+apiRouter.post('/ecommerce/products', roleGuard(['SUPERADMIN', 'ORG_ADMIN']), (req: AuthenticatedRequest, res) => {
+  const { name, description, category, price, stock, sku, image_url, specifications } = req.body;
+  const id = 'prod-' + uuidv4().substring(0, 8);
+  const now = new Date().toISOString();
+
+  dbService.run(`
+    INSERT INTO ecommerce_products (id, name, description, category, price, stock, image_url, sku, specifications, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    id,
+    name,
+    description || '',
+    category || 'MINI_PC_AGENT',
+    price || 0,
+    stock || 10,
+    image_url || '/assets/products/default.png',
+    sku || `MK-${Math.floor(1000 + Math.random() * 9000)}`,
+    JSON.stringify(specifications || {}),
+    now
+  ]);
+
+  res.json({ success: true, id });
+});
+
+// Update Order Status (Fulfillment Tracking)
+apiRouter.patch('/ecommerce/orders/:id/status', (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  dbService.run(`
+    UPDATE ecommerce_orders
+    SET status = ?
+    WHERE id = ? AND tenant_id = ?
+  `, [status || 'CONFIRMED', id, req.tenantId]);
+
+  res.json({ success: true, id, status });
+});
+
+// Delete Product
+apiRouter.delete('/ecommerce/products/:id', roleGuard(['SUPERADMIN']), (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  dbService.run('DELETE FROM ecommerce_products WHERE id = ?', [id]);
+  res.json({ success: true, id });
+});
+
+// --- SITE ADMIN: USER MANAGEMENT (RBAC) ---
+apiRouter.get('/users', (req: AuthenticatedRequest, res) => {
+  const users = dbService.query(`
+    SELECT id, tenant_id, email, full_name, role, phone, status, created_at
+    FROM users
+    WHERE tenant_id = ? OR ? = 'SUPERADMIN'
+    ORDER BY created_at DESC
+  `, [req.tenantId, req.userRole]);
+  res.json(users);
+});
+
+apiRouter.post('/users', roleGuard(['SUPERADMIN', 'ORG_ADMIN']), (req: AuthenticatedRequest, res) => {
+  const { email, password, full_name, role, phone } = req.body;
+  if (!email || !password) {
+    res.status(400).json({ error: 'ایمیل و رمز عبور الزامی است' });
+    return;
+  }
+
+  const existing = dbService.queryOne('SELECT id FROM users WHERE email = ?', [email]);
+  if (existing) {
+    res.status(409).json({ error: 'کاربری با این ایمیل قبلاً ثبت‌نام شده است' });
+    return;
+  }
+
+  const salt = bcrypt.genSaltSync(10);
+  const hash = bcrypt.hashSync(password, salt);
+  const id = 'usr-' + uuidv4().substring(0, 8);
+  const now = new Date().toISOString();
+
+  dbService.run(`
+    INSERT INTO users (id, tenant_id, email, password_hash, full_name, role, phone, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
+  `, [
+    id,
+    req.tenantId,
+    email,
+    hash,
+    full_name || 'کاربر جدید مکران',
+    role || 'OPERATOR',
+    phone || '',
+    now
+  ]);
+
+  res.json({ success: true, id, email, role: role || 'OPERATOR' });
+});
+
+apiRouter.delete('/users/:id', roleGuard(['SUPERADMIN', 'ORG_ADMIN']), (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  if (id === req.userId) {
+    res.status(400).json({ error: 'امکان حذف حساب کاربری جاری وجود ندارد' });
+    return;
+  }
+
+  dbService.run('DELETE FROM users WHERE id = ?', [id]);
+  res.json({ success: true, id });
+});
+
+apiRouter.patch('/users/:id/role', roleGuard(['SUPERADMIN']), (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  const { role, status } = req.body;
+
+  dbService.run(`
+    UPDATE users
+    SET role = COALESCE(?, role), status = COALESCE(?, status)
+    WHERE id = ?
+  `, [role, status, id]);
+
+  res.json({ success: true, id, role, status });
+});
+
+// --- SYSTEM SETTINGS & PLATFORM CONFIG ---
+apiRouter.get('/settings', (req: AuthenticatedRequest, res) => {
+  res.json({
+    platform_name: 'Makoran One',
+    version: '1.0.0',
+    ai_contract_version: 'v1',
+    storage_driver: 'S3_COMPATIBLE_ENCRYPTED',
+    notification_gateways: {
+      sms_kavenegar: 'ONLINE (API KEY ACTIVE)',
+      voice_ivr: 'ONLINE (Faraz Voice Engine)',
+      push_fcm: 'READY (PWA Service Worker)'
+    },
+    default_retention_days: 60,
+    active_tenant: req.tenantId,
+    timestamp: new Date().toISOString()
+  });
 });

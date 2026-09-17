@@ -43,6 +43,21 @@ export function App() {
   const [orders, setOrders] = useState<ShopOrderItem[]>([]);
   const [tenantsList, setTenantsList] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [usersList, setUsersList] = useState<any[]>([]);
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [newUser, setNewUser] = useState({ email: '', password: '', full_name: '', role: 'OPERATOR', phone: '' });
+  const [shopCategory, setShopCategory] = useState<string>('ALL');
+  const [shopSearchText, setShopSearchText] = useState<string>('');
+  const [showAddProductModal, setShowAddProductModal] = useState(false);
+  const [selectedProductDetails, setSelectedProductDetails] = useState<ShopProductItem | null>(null);
+  const [newProduct, setNewProduct] = useState({
+    name: '',
+    category: 'MINI_PC_AGENT' as any,
+    description: '',
+    price: 15000000,
+    stock: 10,
+    sku: 'MK-NEW-01'
+  });
   const [searchPersonName, setSearchPersonName] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [eventFilterType, setEventFilterType] = useState<string>('ALL');
@@ -259,7 +274,7 @@ export function App() {
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const [gRes, camRes, agRes, evRes, alRes, rRes, fRes, pRes, crmRes, attRes, facRes, prodRes, ordRes, tRes, audRes] = await Promise.all([
+      const [gRes, camRes, agRes, evRes, alRes, rRes, fRes, pRes, crmRes, attRes, facRes, prodRes, ordRes, tRes, audRes, uRes] = await Promise.all([
         api.getGuardState(),
         api.getCameras(),
         api.getAgents(),
@@ -274,7 +289,8 @@ export function App() {
         api.getShopProducts(),
         api.getShopOrders(),
         api.getTenants().catch(() => []),
-        api.getAuditLogs().catch(() => [])
+        api.getAuditLogs().catch(() => []),
+        api.getUsers().catch(() => [])
       ]);
       setGuardState(gRes);
       setCameras(camRes);
@@ -291,6 +307,7 @@ export function App() {
       setOrders(ordRes);
       setTenantsList(tRes);
       setAuditLogs(audRes);
+      setUsersList(uRes || []);
     } catch (err) {
       console.error('Failed to load data:', err);
     } finally {
@@ -639,6 +656,61 @@ export function App() {
       showToast(`فرمان مستر «${actionLabels[action]}» به رله‌های مینی‌پی‌سی ابلاغ شد`, 'success');
       const facRes = await api.getFacilities();
       setFacilities(facRes);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Create User
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.createUser(newUser);
+      showToast(`کاربر جدید «${newUser.full_name}» با موفقیت افزوده شد`, 'success');
+      setShowAddUserModal(false);
+      setNewUser({ email: '', password: '', full_name: '', role: 'OPERATOR', phone: '' });
+      const uRes = await api.getUsers();
+      setUsersList(uRes);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Delete User
+  const handleDeleteUser = async (id: string) => {
+    if (!confirm('آیا از حذف دسترسی این کاربر اطمینان دارید؟')) return;
+    try {
+      await api.deleteUser(id);
+      showToast('کاربر با موفقیت حذف گردید', 'success');
+      const uRes = await api.getUsers();
+      setUsersList(uRes);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Add Product to Store
+  const handleAddProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.addProduct(newProduct);
+      showToast(`محصول «${newProduct.name}» به کاتالوگ فروشگاه افزوده شد`, 'success');
+      setShowAddProductModal(false);
+      setNewProduct({ name: '', category: 'MINI_PC_AGENT', description: '', price: 15000000, stock: 10, sku: 'MK-NEW-01' });
+      const prodRes = await api.getShopProducts();
+      setProducts(prodRes);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Update Order Status
+  const handleUpdateOrderStatus = async (id: string, status: string) => {
+    try {
+      await api.updateOrderStatus(id, status);
+      showToast(`وضعیت سفارش ${id} به «${status}» تغییر یافت`, 'success');
+      const ordRes = await api.getShopOrders();
+      setOrders(ordRes);
     } catch (err: any) {
       showToast(err.message, 'error');
     }
@@ -2116,29 +2188,247 @@ export function App() {
         {/* TAB 6: E-COMMERCE PRODUCTS CATALOG */}
         {currentTab === 'shop' && (
           <div className="space-y-6">
-            <div>
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <ShoppingBag className="w-4 h-4 text-[#D4AF37]" />
-                <span>فروشگاه آنلاین تجهیزات سخت‌افزاری و پکیج‌های مکران گارد</span>
-              </h3>
-              <p className="text-xs text-slate-400">
-                تامین مستقیم مینی‌پی‌سی‌های گیت‌وی N100، دوربین‌های هوشمند 4K، دستگاه‌های NVR صنعتی و ماژول‌های رله تحت شبکه.
-              </p>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <ShoppingBag className="w-4 h-4 text-[#D4AF37]" />
+                  <span>فروشگاه آنلاین تجهیزات سخت‌افزاری و پکیج‌های مکران گارد</span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  تامین مستقیم مینی‌پی‌سی‌های گیت‌وی N100، دوربین‌های هوشمند 4K، دستگاه‌های NVR صنعتی و ماژول‌های رله تحت شبکه.
+                </p>
+              </div>
+
+              {(user?.role === 'SUPERADMIN' || user?.role === 'ORG_ADMIN') && (
+                <button
+                  onClick={() => setShowAddProductModal(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition flex items-center gap-1.5 shadow"
+                >
+                  <span>+ افزودن محصول جدید به فروشگاه</span>
+                </button>
+              )}
             </div>
 
+            {/* Filter and Search Bar for Products */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-[#11131C] p-3 rounded-2xl border border-slate-800">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[
+                  { id: 'ALL', label: 'همه دسته‌ها' },
+                  { id: 'MINI_PC_AGENT', label: 'مینی‌پی‌سی گیت‌وی' },
+                  { id: 'CAMERA_4K', label: 'دوربین‌های ۴K' },
+                  { id: 'NVR', label: 'دستگاه‌های NVR' },
+                  { id: 'SENSORS_RELAYS', label: 'رله و سنسورها' },
+                  { id: 'PACKAGES', label: 'پکیج‌های جامع' }
+                ].map(cat => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setShopCategory(cat.id)}
+                    className={`px-3 py-1 rounded-xl text-xs font-semibold transition ${
+                      shopCategory === cat.id
+                        ? 'bg-[#D4AF37] text-black shadow font-bold'
+                        : 'bg-[#181B26] text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="w-full sm:w-64">
+                <input
+                  type="text"
+                  placeholder="جستجوی نام یا مدل کالا..."
+                  value={shopSearchText}
+                  onChange={e => setShopSearchText(e.target.value)}
+                  className="w-full px-3 py-1.5 rounded-xl bg-[#181B26] border border-slate-700 text-xs text-white"
+                />
+              </div>
+            </div>
+
+            {/* Add Product Modal */}
+            {showAddProductModal && (
+              <div className="bg-[#121520] border border-[#D4AF37]/50 rounded-2xl p-6 shadow-2xl space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <ShoppingBag className="w-4 h-4 text-[#D4AF37]" />
+                    <span>افزودن محصول سخت‌افزاری جدید به کاتالوگ فروشگاه</span>
+                  </h4>
+                  <button onClick={() => setShowAddProductModal(false)} className="text-slate-400 hover:text-white">✕</button>
+                </div>
+
+                <form onSubmit={handleAddProduct} className="space-y-4 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-slate-400 mb-1">نام محصول</label>
+                      <input
+                        type="text"
+                        placeholder="مثال: دوربین اسپیددام مکران PTZ 4K"
+                        value={newProduct.name}
+                        onChange={e => setNewProduct({ ...newProduct, name: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">دسته‌بندی</label>
+                      <select
+                        value={newProduct.category}
+                        onChange={e => setNewProduct({ ...newProduct, category: e.target.value as any })}
+                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white"
+                      >
+                        <option value="MINI_PC_AGENT">مینی‌پی‌سی گیت‌وی (Mini PC Agent)</option>
+                        <option value="CAMERA_4K">دوربین تحت شبکه 4K</option>
+                        <option value="NVR">دستگاه ذخیره‌ساز NVR</option>
+                        <option value="SENSORS_RELAYS">ماژول رله و سنسور IoT</option>
+                        <option value="PACKAGES">پکیج جامع امنیتی</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">کد محصول (SKU)</label>
+                      <input
+                        type="text"
+                        placeholder="MK-IPC-PTZ-01"
+                        value={newProduct.sku}
+                        onChange={e => setNewProduct({ ...newProduct, sku: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white font-mono-num"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">قیمت فروش (تومان)</label>
+                      <input
+                        type="number"
+                        value={newProduct.price}
+                        onChange={e => setNewProduct({ ...newProduct, price: parseInt(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white font-mono-num"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">موجودی انبار</label>
+                      <input
+                        type="number"
+                        value={newProduct.stock}
+                        onChange={e => setNewProduct({ ...newProduct, stock: parseInt(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white font-mono-num"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">توضیحات کوتاه</label>
+                      <input
+                        type="text"
+                        placeholder="توضیح مختصر در مورد مشخصات"
+                        value={newProduct.description}
+                        onChange={e => setNewProduct({ ...newProduct, description: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                    <button type="button" onClick={() => setShowAddProductModal(false)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300">انصراف</button>
+                    <button type="submit" className="px-4 py-2 rounded-xl bg-[#D4AF37] text-black font-bold">ثبت و انتشار محصول در فروشگاه</button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Product Details Specs Modal */}
+            {selectedProductDetails && (
+              <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+                <div className="bg-[#10131D] border border-[#D4AF37]/50 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-[#D4AF37]" />
+                      <span>دیتاشیت و مشخصات فنی تجهیز</span>
+                    </h4>
+                    <button onClick={() => setSelectedProductDetails(null)} className="text-slate-400 hover:text-white">✕</button>
+                  </div>
+
+                  <div>
+                    <h5 className="font-bold text-white text-sm">{selectedProductDetails.name}</h5>
+                    <p className="text-xs text-slate-400 mt-1">{selectedProductDetails.description}</p>
+                  </div>
+
+                  <div className="bg-[#151926] p-4 rounded-xl border border-slate-800 space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">شناسه فنی (SKU):</span>
+                      <span className="text-[#ECC665] font-mono-num font-bold">{selectedProductDetails.sku}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">دسته محصول:</span>
+                      <span className="text-white font-semibold">{selectedProductDetails.category}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">موجودی انبار چابهار:</span>
+                      <span className="text-emerald-400 font-mono-num font-bold">{selectedProductDetails.stock} عدد آماده ارسال</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">قیمت مصوب شرکتی:</span>
+                      <span className="text-emerald-400 font-mono-num font-bold">{selectedProductDetails.price.toLocaleString('fa-IR')} تومان</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">گارانتی و خدمات پس از فروش:</span>
+                      <span className="text-white font-semibold">۲۴ ماه تعویض بی‌قید و شرط مکران سرویس</span>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      onClick={() => setSelectedProductDetails(null)}
+                      className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs text-white"
+                    >
+                      بستن
+                    </button>
+                    <button
+                      onClick={() => {
+                        setCartModal(selectedProductDetails);
+                        setSelectedProductDetails(null);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition flex items-center gap-1"
+                    >
+                      <ShoppingCart className="w-3.5 h-3.5" />
+                      <span>ثبت سفارش خرید</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {products.map(p => (
+              {products.filter(p => {
+                if (shopCategory !== 'ALL' && p.category !== shopCategory) return false;
+                if (shopSearchText) {
+                  const q = shopSearchText.toLowerCase();
+                  if (!p.name.toLowerCase().includes(q) && !p.sku.toLowerCase().includes(q)) return false;
+                }
+                return true;
+              }).map(p => (
                 <div key={p.id} className="bg-[#0F1118] border border-slate-800 hover:border-[#D4AF37]/40 rounded-2xl p-5 shadow-xl flex flex-col justify-between transition group">
                   <div>
                     <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#D4AF37]/15 text-[#ECC665] font-mono-num">
                         {p.sku}
                       </span>
-                      <span className="text-[11px] text-emerald-400 font-semibold">موجود در انبار چابهار ({p.stock})</span>
+                      <span className="text-[11px] text-emerald-400 font-semibold">موجود در انبار ({p.stock})</span>
                     </div>
 
                     <h4 className="text-sm font-bold text-white group-hover:text-[#ECC665] transition">{p.name}</h4>
                     <p className="text-xs text-slate-400 mt-2 leading-relaxed line-clamp-3">{p.description}</p>
+                    
+                    <button
+                      onClick={() => setSelectedProductDetails(p)}
+                      className="mt-3 text-[11px] text-[#ECC665] hover:underline flex items-center gap-1 font-semibold"
+                    >
+                      <span>مشخصات فنی و دیتاشیت</span>
+                      <ChevronRight className="w-3 h-3 rotate-180" />
+                    </button>
                   </div>
 
                   <div className="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between">
@@ -2231,13 +2521,14 @@ export function App() {
                       <th className="p-3.5">شماره تماس</th>
                       <th className="p-3.5">مبلغ کل سفارش</th>
                       <th className="p-3.5">وضعیت تامین</th>
-                      <th className="p-3.5 text-left">تاریخ ثبت</th>
+                      <th className="p-3.5">تاریخ ثبت</th>
+                      <th className="p-3.5 text-left">عملیات تامین</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/80 font-mono-num">
                     {orders.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="p-4 text-center text-slate-500 font-sans">هیچ سفارشی ثبت نشده است</td>
+                        <td colSpan={7} className="p-4 text-center text-slate-500 font-sans">هیچ سفارشی ثبت نشده است</td>
                       </tr>
                     ) : (
                       orders.map(ord => (
@@ -2249,12 +2540,39 @@ export function App() {
                             {ord.total_amount?.toLocaleString('fa-IR')} تومان
                           </td>
                           <td className="p-3.5 font-sans">
-                            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                              {ord.status === 'CONFIRMED' ? 'تایید و در حال آماده‌سازی' : ord.status}
+                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                              ord.status === 'DELIVERED'
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                : ord.status === 'SHIPPED'
+                                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                            }`}>
+                              {ord.status === 'CONFIRMED' ? 'آماده‌سازی در انبار' : ord.status === 'SHIPPED' ? 'ارسال شده (در مسیر سایت)' : 'تحویل موفق به مشتری'}
                             </span>
                           </td>
-                          <td className="p-3.5 text-left text-slate-400 text-[11px]">
-                            {new Date(ord.created_at).toLocaleString('fa-IR')}
+                          <td className="p-3.5 text-slate-400 text-[11px]">
+                            {new Date(ord.created_at).toLocaleDateString('fa-IR')}
+                          </td>
+                          <td className="p-3.5 text-left font-sans">
+                            {ord.status === 'CONFIRMED' && (
+                              <button
+                                onClick={() => handleUpdateOrderStatus(ord.id, 'SHIPPED')}
+                                className="px-2.5 py-1 rounded-lg bg-blue-600/30 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/50 text-[10px] font-bold transition"
+                              >
+                                ثبت ارسال 🚚
+                              </button>
+                            )}
+                            {ord.status === 'SHIPPED' && (
+                              <button
+                                onClick={() => handleUpdateOrderStatus(ord.id, 'DELIVERED')}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/50 text-[10px] font-bold transition"
+                              >
+                                تایید تحویل ✅
+                              </button>
+                            )}
+                            {ord.status === 'DELIVERED' && (
+                              <span className="text-emerald-400 text-[10px] font-bold">تحویل‌شده</span>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -2838,6 +3156,207 @@ export function App() {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            {/* SITE ADMIN: USER MANAGEMENT & RBAC */}
+            <div className="space-y-4 pt-4 border-t border-slate-800">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Users className="w-4 h-4 text-[#D4AF37]" />
+                    <span>مدیریت کاربران سامانه و سطوح دسترسی (User Management & RBAC)</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    تعریف نقش‌های SuperAdmin، مدیر سازمان (OrgAdmin)، اپراتور شیفت (Operator) و بیننده (Viewer).
+                  </p>
+                </div>
+                {(user?.role === 'SUPERADMIN' || user?.role === 'ORG_ADMIN') && (
+                  <button
+                    onClick={() => setShowAddUserModal(true)}
+                    className="px-3 py-1.5 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition flex items-center gap-1.5 shadow"
+                  >
+                    <span>+ افزودن کاربر جدید</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Add User Modal */}
+              {showAddUserModal && (
+                <div className="bg-[#121520] border border-[#D4AF37]/50 rounded-2xl p-6 shadow-2xl space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <User className="w-4 h-4 text-[#D4AF37]" />
+                      <span>تعریف حساب کاربری جدید با سطح دسترسی</span>
+                    </h4>
+                    <button onClick={() => setShowAddUserModal(false)} className="text-slate-400 hover:text-white">✕</button>
+                  </div>
+
+                  <form onSubmit={handleCreateUser} className="space-y-4 text-xs">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-slate-400 mb-1">نام و نام خانوادگی</label>
+                        <input
+                          type="text"
+                          placeholder="مثال: علی احمدی"
+                          value={newUser.full_name}
+                          onChange={e => setNewUser({ ...newUser, full_name: e.target.value })}
+                          className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-400 mb-1">پست الکترونیکی (ایمیل ورود)</label>
+                        <input
+                          type="email"
+                          placeholder="operator@makoran.io"
+                          value={newUser.email}
+                          onChange={e => setNewUser({ ...newUser, email: e.target.value })}
+                          className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white font-mono-num"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-400 mb-1">رمز عبور ورود</label>
+                        <input
+                          type="password"
+                          placeholder="حداقل ۸ کاراکتر"
+                          value={newUser.password}
+                          onChange={e => setNewUser({ ...newUser, password: e.target.value })}
+                          className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-400 mb-1">نقش و سطح دسترسی (RBAC Role)</label>
+                        <select
+                          value={newUser.role}
+                          onChange={e => setNewUser({ ...newUser, role: e.target.value })}
+                          className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white"
+                        >
+                          <option value="OPERATOR">اپراتور مانیتورینگ (OPERATOR)</option>
+                          <option value="ORG_ADMIN">مدیر سازمان و سایت (ORG_ADMIN)</option>
+                          <option value="VIEWER">بیننده استریم زنده (VIEWER)</option>
+                          <option value="SUPERADMIN">مدیر ارشد سامانه (SUPERADMIN)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-400 mb-1">شماره تماس اضطراری</label>
+                        <input
+                          type="tel"
+                          placeholder="0912..."
+                          value={newUser.phone}
+                          onChange={e => setNewUser({ ...newUser, phone: e.target.value })}
+                          className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white font-mono-num"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                      <button type="button" onClick={() => setShowAddUserModal(false)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300">انصراف</button>
+                      <button type="submit" className="px-4 py-2 rounded-xl bg-[#D4AF37] text-black font-bold">ایجاد حساب کاربری</button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              <div className="bg-[#0F1118] border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-[#141722] text-slate-400 border-b border-slate-800">
+                    <tr>
+                      <th className="p-3.5">نام کاربر</th>
+                      <th className="p-3.5">ایمیل ورود</th>
+                      <th className="p-3.5">سطح دسترسی (Role)</th>
+                      <th className="p-3.5">شماره همراه</th>
+                      <th className="p-3.5">وضعیت</th>
+                      <th className="p-3.5 text-left">عملیات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/80 font-mono-num">
+                    {usersList.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-4 text-center text-slate-500 font-sans">هیچ کاربری یافت نشد</td>
+                      </tr>
+                    ) : (
+                      usersList.map(u => (
+                        <tr key={u.id} className="hover:bg-[#131622] transition">
+                          <td className="p-3.5 font-bold font-sans text-white">{u.full_name}</td>
+                          <td className="p-3.5 text-slate-300">{u.email}</td>
+                          <td className="p-3.5">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              u.role === 'SUPERADMIN' ? 'bg-[#D4AF37]/20 text-[#ECC665] border border-[#D4AF37]/40' :
+                              u.role === 'ORG_ADMIN' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' :
+                              u.role === 'OPERATOR' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' :
+                              'bg-slate-700 text-slate-300'
+                            }`}>
+                              {u.role}
+                            </span>
+                          </td>
+                          <td className="p-3.5 text-slate-400">{u.phone || '-'}</td>
+                          <td className="p-3.5">
+                            <span className="text-emerald-400 font-semibold text-[11px] font-sans">
+                              {u.status === 'ACTIVE' ? 'فعال' : u.status}
+                            </span>
+                          </td>
+                          <td className="p-3.5 text-left font-sans">
+                            {u.id !== user?.id && (
+                              <button
+                                onClick={() => handleDeleteUser(u.id)}
+                                className="text-red-400 hover:text-red-300 text-xs transition"
+                              >
+                                حذف
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* PLATFORM INFRASTRUCTURE & SETTINGS */}
+            <div className="space-y-4 pt-4 border-t border-slate-800">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Settings className="w-4 h-4 text-[#D4AF37]" />
+                <span>پیکربندی زیرساخت و تنظیمات پلتفرم (Platform Infrastructure)</span>
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                <div className="bg-[#0F1118] border border-slate-800 p-4 rounded-xl space-y-2">
+                  <div className="font-bold text-[#ECC665] flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4" />
+                    <span>درگاه‌های اعلان و پیامک</span>
+                  </div>
+                  <div className="text-slate-300 text-[11px]">سامانه پیامک کاوه‌نگار: <span className="text-emerald-400 font-bold">متصل</span></div>
+                  <div className="text-slate-300 text-[11px]">موتور تماس صوتی IVR: <span className="text-emerald-400 font-bold">فعال (فراز)</span></div>
+                  <div className="text-slate-300 text-[11px]">پوش نوتیفیکیشن وب/PWA: <span className="text-emerald-400 font-bold">فعال</span></div>
+                </div>
+
+                <div className="bg-[#0F1118] border border-slate-800 p-4 rounded-xl space-y-2">
+                  <div className="font-bold text-[#ECC665] flex items-center gap-2">
+                    <Radio className="w-4 h-4" />
+                    <span>سیگنالینگ و استریم WebRTC</span>
+                  </div>
+                  <div className="text-slate-300 text-[11px]">پروتکل استریم: <span className="text-white font-mono-num">H.264 / WebRTC DataChannel</span></div>
+                  <div className="text-slate-300 text-[11px]">سرورهای STUN: <span className="text-white font-mono-num">Google STUN L1/L2</span></div>
+                  <div className="text-slate-300 text-[11px]">خط‌مشی پهنای باند: <span className="text-emerald-400 font-bold">استریم strictly on-demand</span></div>
+                </div>
+
+                <div className="bg-[#0F1118] border border-slate-800 p-4 rounded-xl space-y-2">
+                  <div className="font-bold text-[#ECC665] flex items-center gap-2">
+                    <HardDrive className="w-4 h-4" />
+                    <span>ذخیره‌سازی و حریم خصوصی</span>
+                  </div>
+                  <div className="text-slate-300 text-[11px]">ذخیره‌سازی اسنپ‌شات‌ها: <span className="text-white">ابری سازگار با S3</span></div>
+                  <div className="text-slate-300 text-[11px]">دوره نگهداری لاگ‌ها: <span className="text-white font-mono-num font-bold">60 روز</span></div>
+                  <div className="text-slate-300 text-[11px]">امحای خودکار بیومتریک: <span className="text-emerald-400 font-bold">فعال</span></div>
+                </div>
               </div>
             </div>
           </div>
