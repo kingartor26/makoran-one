@@ -112,7 +112,50 @@ export interface PlateItem {
   active: number;
 }
 
-export interface CRMCustomer {
+export interface AttendanceItem {
+  id: string;
+  person_id: string;
+  person_name: string;
+  camera_id: string;
+  check_type: 'CHECK_IN' | 'CHECK_OUT';
+  confidence: number;
+  snapshot_url?: string;
+  timestamp: string;
+}
+
+export interface FacilityItem {
+  id: string;
+  agent_id: string;
+  name: string;
+  type: 'LIGHT' | 'HVAC' | 'SMART_LOCK' | 'GATE' | 'POWER_METER';
+  state: string;
+  value: number;
+  zone: string;
+  last_updated: string;
+}
+
+export interface ShopProductItem {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  price: number;
+  stock: number;
+  image_url: string;
+  sku: string;
+  specifications: string;
+}
+
+export interface ShopOrderItem {
+  id: string;
+  customer_name: string;
+  phone: string;
+  total_amount: number;
+  status: string;
+  items: string;
+  created_at: string;
+}
+
   id: string;
   name: string;
   company: string;

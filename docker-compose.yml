@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  makoran-cloud:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: makoran-cloud-brain
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - HOST=0.0.0.0
+      - JWT_SECRET=makoran-guard-super-secret-key-2026
+      - NODE_ENV=production
+    volumes:
+      - makoran_data:/app/server/data
+      - makoran_uploads:/app/server/uploads
+    networks:
+      - makoran-net
+
+  makoran-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    container_name: makoran-agent-gateway
+    restart: always
+    network_mode: "host"
+    environment:
+      - CLOUD_HOST=127.0.0.1
+      - CLOUD_PORT=3000
+      - AGENT_ID=agent-mini-01
+      - TENANT_ID=tenant-makoran-01
+      - AGENT_TOKEN=agt_tok_makoran_secret_01
+    volumes:
+      - makoran_agent_data:/app/agent/data
+      - makoran_agent_updates:/app/agent/updates
+    depends_on:
+      - makoran-cloud
+
+volumes:
+  makoran_data:
+  makoran_uploads:
+  makoran_agent_data:
+  makoran_agent_updates:
+
+networks:
+  makoran-net:
+    driver: bridge

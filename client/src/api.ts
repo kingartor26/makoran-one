@@ -173,6 +173,46 @@ export class ApiClient {
     });
   }
 
+  // Attendance
+  async getAttendance() {
+    return this.request('/attendance');
+  }
+
+  async logAttendance(data: any) {
+    return this.request('/attendance/check-in', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  // Facility & Automation
+  async getFacilities() {
+    return this.request('/facilities');
+  }
+
+  async toggleFacility(id: string, state?: string, value?: number) {
+    return this.request(`/facilities/${id}/toggle`, {
+      method: 'POST',
+      body: JSON.stringify({ state, value })
+    });
+  }
+
+  // E-Commerce
+  async getShopProducts() {
+    return this.request('/ecommerce/products');
+  }
+
+  async getShopOrders() {
+    return this.request('/ecommerce/orders');
+  }
+
+  async createShopOrder(order: any) {
+    return this.request('/ecommerce/orders', {
+      method: 'POST',
+      body: JSON.stringify(order)
+    });
+  }
+
   // Billing & CRM
   async getBilling() {
     return this.request('/billing');

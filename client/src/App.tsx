@@ -5,12 +5,14 @@ import {
   Sliders, User, Users, Car, Key, FileText, Check, PhoneCall,
   MessageSquare, Radio, HardDrive, Wifi, Power, Play, Square,
   Camera as CamIcon, Terminal, ExternalLink, Settings, Layers,
-  ChevronRight, Sparkles, Building, Lock, Unlock, Zap, Download
+  ChevronRight, Sparkles, Building, Lock, Unlock, Zap, Download,
+  Clock, Thermometer, Lightbulb, ShoppingBag, ShoppingCart, CheckCircle
 } from 'lucide-react';
 import { api } from './api';
 import {
   UserProfile, GuardState, Camera, Agent, SecurityEvent,
-  AlarmItem, AlarmRule, FaceItem, PlateItem, CRMCustomer
+  AlarmItem, AlarmRule, FaceItem, PlateItem, CRMCustomer,
+  AttendanceItem, FacilityItem, ShopProductItem, ShopOrderItem
 } from './types';
 
 export function App() {
@@ -23,7 +25,7 @@ export function App() {
   const [loginError, setLoginError] = useState('');
 
   // Active view
-  const [currentTab, setCurrentTab] = useState<'monitor' | 'events' | 'cameras' | 'rules' | 'biometrics' | 'commercial'>('monitor');
+  const [currentTab, setCurrentTab] = useState<'monitor' | 'events' | 'cameras' | 'rules' | 'biometrics' | 'attendance' | 'facilities' | 'shop' | 'commercial'>('monitor');
 
   // Core Data
   const [guardState, setGuardState] = useState<GuardState | null>(null);
@@ -35,11 +37,15 @@ export function App() {
   const [faces, setFaces] = useState<FaceItem[]>([]);
   const [plates, setPlates] = useState<PlateItem[]>([]);
   const [crm, setCrm] = useState<CRMCustomer[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceItem[]>([]);
+  const [facilities, setFacilities] = useState<FacilityItem[]>([]);
+  const [products, setProducts] = useState<ShopProductItem[]>([]);
+  const [orders, setOrders] = useState<ShopOrderItem[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Live View WebRTC Sessions (Camera ID -> Session ID)
   const [activeLiveStreams, setActiveLiveStreams] = useState<Record<string, { sessionId: string; startedAt: number }>>({});
-  const [streamingStats, setStreamingStats] = useState<Record<string, { fps: number; kbps: number }>>({});
+  const [streamingStats, setStreamingStats] = useState<Record<string, { fps: number; kbps: number; frame: number }>>({});
 
   // AI Simulation State
   const [aiSimulating, setAiSimulating] = useState(false);
@@ -49,12 +55,13 @@ export function App() {
   const [showAddCamera, setShowAddCamera] = useState(false);
   const [showAddFace, setShowAddFace] = useState(false);
   const [showAddPlate, setShowAddPlate] = useState(false);
-  const [showAddRule, setShowAddRule] = useState(false);
+  const [cartModal, setCartModal] = useState<ShopProductItem | null>(null);
 
   // Forms
   const [newCam, setNewCam] = useState({ name: '', protocol: 'ONVIF', zone: 'entrance', stream_url: '', channel_index: 1 });
   const [newFace, setNewFace] = useState({ name: '', category: 'VIP', phone: '', notes: '' });
   const [newPlate, setNewPlate] = useState({ plate_number: '', owner_name: '', category: 'ALLOWED', vehicle_model: '' });
+  const [orderCustomer, setOrderCustomer] = useState({ name: '', phone: '' });
 
   // Banner message
   const [toast, setToast] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -104,7 +111,6 @@ export function App() {
   };
 
   const handleLogout = () => {
-    // Stop all active streams first
     Object.values(activeLiveStreams).forEach(s => api.stopLiveView(s.sessionId));
     setActiveLiveStreams({});
     api.setToken(null);
@@ -112,20 +118,24 @@ export function App() {
     setUser(null);
   };
 
-  // 2. Fetch Data
+  // 2. Fetch All Data
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const [gRes, camRes, agRes, evRes, alRes, rRes, fRes, pRes, crmRes] = await Promise.all([
+      const [gRes, camRes, agRes, evRes, alRes, rRes, fRes, pRes, crmRes, attRes, facRes, prodRes, ordRes] = await Promise.all([
         api.getGuardState(),
         api.getCameras(),
         api.getAgents(),
-        api.getEvents(30),
+        api.getEvents(40),
         api.getAlarms(),
         api.getRules(),
         api.getFaces(),
         api.getPlates(),
-        api.getCRM()
+        api.getCRM(),
+        api.getAttendance(),
+        api.getFacilities(),
+        api.getShopProducts(),
+        api.getShopOrders()
       ]);
       setGuardState(gRes);
       setCameras(camRes);
@@ -136,6 +146,10 @@ export function App() {
       setFaces(fRes);
       setPlates(pRes);
       setCrm(crmRes);
+      setAttendance(attRes);
+      setFacilities(facRes);
+      setProducts(prodRes);
+      setOrders(ordRes);
     } catch (err) {
       console.error('Failed to load data:', err);
     } finally {
@@ -143,31 +157,56 @@ export function App() {
     }
   };
 
-  // Auto-refresh interval for telemetry
+  // Real-time WebSocket connection to Server Client Channel
   useEffect(() => {
     if (!token) return;
-    const interval = setInterval(() => {
-      api.getGuardState().then(setGuardState).catch(() => {});
-      api.getAgents().then(setAgents).catch(() => {});
-      api.getAlarms().then(setAlarms).catch(() => {});
-    }, 5000);
-    return () => clearInterval(interval);
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws/client?token=${token}`;
+    let ws: WebSocket | null = null;
+
+    try {
+      ws = new WebSocket(wsUrl);
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.event === 'new_security_event') {
+            setEvents(prev => [payload.data, ...prev]);
+            if (payload.data.alarm_triggered) {
+              setGuardState(prev => prev ? { ...prev, alarm_status: 'TRIGGERED', siren_active: 1, relay_active: 1 } : null);
+              showToast(`🚨 هشدار فوری: ${payload.data.label}`, 'error');
+            }
+          } else if (payload.event === 'guard_state_change') {
+            setGuardState(prev => prev ? { ...prev, ...payload.data } : null);
+          } else if (payload.event === 'new_attendance') {
+            setAttendance(prev => [payload.data, ...prev]);
+          } else if (payload.event === 'facility_state_change') {
+            setFacilities(prev => prev.map(f => f.id === payload.data.deviceId ? { ...f, state: payload.data.state, value: payload.data.value } : f));
+          }
+        } catch (e) {}
+      };
+    } catch (e) {}
+
+    return () => {
+      if (ws) ws.close();
+    };
   }, [token]);
 
-  // Live view simulation stats loop
+  // Live video frame simulation loop
   useEffect(() => {
     const timer = setInterval(() => {
-      const stats: Record<string, { fps: number; kbps: number }> = {};
+      const stats: Record<string, { fps: number; kbps: number; frame: number }> = {};
       Object.keys(activeLiveStreams).forEach(camId => {
+        const prev = streamingStats[camId] || { fps: 25, kbps: 2200, frame: 0 };
         stats[camId] = {
           fps: Math.floor(24 + Math.random() * 2),
-          kbps: Math.floor(2100 + Math.random() * 400)
+          kbps: Math.floor(2100 + Math.random() * 400),
+          frame: prev.frame + 1
         };
       });
       setStreamingStats(stats);
-    }, 1500);
+    }, 1000);
     return () => clearInterval(timer);
-  }, [activeLiveStreams]);
+  }, [activeLiveStreams, streamingStats]);
 
   // Security Arming actions
   const setArmedState = async (state: 'ARMED_AWAY' | 'ARMED_STAY' | 'DISARMED' | 'PANIC') => {
@@ -201,7 +240,6 @@ export function App() {
     const isStreaming = !!activeLiveStreams[camera.id];
 
     if (isStreaming) {
-      // STOP live view (strict "No user request = No live stream" rule)
       const session = activeLiveStreams[camera.id];
       try {
         await api.stopLiveView(session.sessionId);
@@ -213,7 +251,6 @@ export function App() {
       });
       showToast(`پخش زنده دوربین ${camera.name} متوقف شد (ترافیک آزاد شد)`, 'info');
     } else {
-      // START live view on demand
       try {
         showToast(`درخواست استریم WebRTC از مینی‌پی‌سی برای دوربین ${camera.name}...`, 'info');
         const session = await api.requestLiveView(camera.id, camera.agent_id);
@@ -246,7 +283,7 @@ export function App() {
     }
   };
 
-  // Agent Hardware Command
+  // Hardware Controls
   const testAgentRelay = async (agentId: string, relay = 1) => {
     try {
       await api.sendAgentCommand(agentId, 'trigger_relay', { relay, duration: 10 });
@@ -274,14 +311,62 @@ export function App() {
     }
   };
 
-  // Form Submissions
+  // Toggle Facility Device
+  const handleToggleFacility = async (dev: FacilityItem) => {
+    try {
+      const newState = dev.state === 'ON' ? 'OFF' : dev.state === 'OPEN' ? 'CLOSED' : 'ON';
+      await api.toggleFacility(dev.id, newState);
+      setFacilities(prev => prev.map(f => f.id === dev.id ? { ...f, state: newState } : f));
+      showToast(`دستگاه ${dev.name} به وضعیت «${newState}» تغییر یافت`, 'success');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Test Attendance Clock-In
+  const testAttendanceClockIn = async () => {
+    try {
+      await api.logAttendance({
+        person_id: 'face-01',
+        person_name: 'مهندس رضا مکرانی',
+        camera_id: 'cam-01',
+        check_type: 'CHECK_IN',
+        confidence: 0.99
+      });
+      showToast('ثبت تردد خودکار با تشخیص چهره با موفقیت ثبت شد', 'success');
+      const updated = await api.getAttendance();
+      setAttendance(updated);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Place E-Commerce Order
+  const handlePlaceOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cartModal) return;
+    try {
+      await api.createShopOrder({
+        customer_name: orderCustomer.name || user?.fullName || 'خریدار سازمانی',
+        phone: orderCustomer.phone || user?.phone || '+989120000000',
+        total_amount: cartModal.price,
+        items: [{ product_id: cartModal.id, product_name: cartModal.name, quantity: 1, unit_price: cartModal.price }]
+      });
+      setCartModal(null);
+      setOrderCustomer({ name: '', phone: '' });
+      showToast(`سفارش خرید تجهیزات امنیتی با موفقیت ثبت گردید. پیش‌فاکتور صادر شد.`, 'success');
+      const updated = await api.getShopOrders();
+      setOrders(updated);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Submissions
   const handleAddCamera = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.addCamera({
-        ...newCam,
-        agent_id: agents[0]?.id || 'agent-mini-01'
-      });
+      await api.addCamera({ ...newCam, agent_id: agents[0]?.id || 'agent-mini-01' });
       setShowAddCamera(false);
       setNewCam({ name: '', protocol: 'ONVIF', zone: 'entrance', stream_url: '', channel_index: 1 });
       showToast('دوربین جدید با موفقیت اضافه شد', 'success');
@@ -317,15 +402,13 @@ export function App() {
     }
   };
 
-  // Unauthenticated Login Screen
+  // Login Screen
   if (!token || !user) {
     return (
       <div className="min-h-screen bg-[#07080B] text-slate-100 flex flex-col justify-center items-center px-4 relative overflow-hidden" dir="rtl">
-        {/* Subtle Luxury Spotlight Background */}
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[650px] h-[650px] bg-[#D4AF37]/5 rounded-full blur-[130px] pointer-events-none"></div>
 
         <div className="w-full max-w-md bg-[#0F1118]/90 border border-[#D4AF37]/30 rounded-2xl p-8 shadow-2xl backdrop-blur-md relative z-10">
-          {/* Logo Brand Header */}
           <div className="flex flex-col items-center mb-6 text-center">
             <div className="w-24 h-24 mb-3 relative flex items-center justify-center p-2 rounded-2xl bg-gradient-to-b from-[#1E1B15] to-[#0E0F14] border border-[#D4AF37]/40 shadow-lg">
               <img src="/logo-icon.svg" alt="Makoran Service Logo" className="w-full h-full object-contain filter drop-shadow" />
@@ -407,7 +490,6 @@ export function App() {
       {/* TOP NAVBAR & BRAND HEADER */}
       <header className="sticky top-0 z-40 bg-[#0B0D13]/95 backdrop-blur-md border-b border-[#D4AF37]/25 px-4 lg:px-8 py-2.5">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          {/* Logo & Platform Name */}
           <div className="flex items-center gap-3.5">
             <div className="w-11 h-11 p-1 rounded-xl bg-gradient-to-br from-[#1C1810] to-[#0A0B0E] border border-[#D4AF37]/50 shadow-md flex items-center justify-center">
               <img src="/logo-icon.svg" alt="Makoran Logo" className="w-full h-full object-contain filter drop-shadow" />
@@ -426,13 +508,12 @@ export function App() {
                 <span className="text-slate-600">•</span>
                 <span className="text-emerald-400 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  سرور ابری متصل
+                  سرور ابری هوشمند متصل
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Center: System Status Pill */}
           <div className="hidden md:flex items-center gap-4 bg-[#12151E] px-4 py-1.5 rounded-full border border-slate-800 text-xs">
             <div className="flex items-center gap-2">
               <Radio className="w-3.5 h-3.5 text-[#D4AF37]" />
@@ -449,7 +530,6 @@ export function App() {
             </div>
           </div>
 
-          {/* User Profile & Actions */}
           <div className="flex items-center gap-3">
             <div className="text-left hidden sm:block">
               <div className="text-xs font-bold text-slate-200">{user.fullName}</div>
@@ -510,10 +590,13 @@ export function App() {
           {[
             { id: 'monitor', label: 'مانیتورینگ زنده و گارد', icon: Video },
             { id: 'events', label: 'رویدادها و هشدارهای AI', icon: Activity, count: alarms.length },
-            { id: 'cameras', label: 'دوربین‌ها و مینی‌پی‌سی گیت‌وی', icon: CamIcon },
+            { id: 'cameras', label: 'دوربین‌ها و مینی‌پی‌سی', icon: CamIcon },
+            { id: 'attendance', label: 'ثبت تردد پرسنل (Face Attendance)', icon: Clock },
+            { id: 'facilities', label: 'تاسیسات و اتوماسیون هوشمند', icon: Lightbulb },
+            { id: 'shop', label: 'فروشگاه تجهیزات مکران', icon: ShoppingBag },
             { id: 'rules', label: 'موتور قوانین امنیتی', icon: Sliders },
             { id: 'biometrics', label: 'دایرکتوری چهره و پلاک', icon: Users },
-            { id: 'commercial', label: 'اشتراک SaaS و مشتریان', icon: Building }
+            { id: 'commercial', label: 'اشتراک SaaS و CRM', icon: Building }
           ].map(tab => {
             const Icon = tab.icon;
             const active = currentTab === tab.id;
@@ -521,7 +604,7 @@ export function App() {
               <button
                 key={tab.id}
                 onClick={() => setCurrentTab(tab.id as any)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
                   active
                     ? 'bg-gradient-to-r from-[#D4AF37]/25 to-[#B38622]/15 text-[#FFE082] border border-[#D4AF37]/50 shadow'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-[#151822]'
@@ -543,12 +626,10 @@ export function App() {
       {/* MAIN VIEW CONTAINER */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-8 space-y-6">
 
-        {/* ======================================================== */}
-        {/* VIEW 1: LIVE MONITORING & MAKORAN GUARD CONSOLE          */}
-        {/* ======================================================== */}
+        {/* TAB 1: MONITOR & LIVE VIEW */}
         {currentTab === 'monitor' && (
           <div className="space-y-6">
-            {/* MAKORAN GUARD SECURITY CONSOLE CONTROLLER */}
+            {/* GUARD ARMING CONSOLE */}
             <div className="bg-[#0F1118] border border-[#D4AF37]/35 rounded-2xl p-6 shadow-xl relative overflow-hidden">
               <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 pb-6 border-b border-slate-800/80">
                 <div>
@@ -570,12 +651,8 @@ export function App() {
                        '🔓 غیرفعال (DISARMED)'}
                     </span>
                   </h2>
-                  <p className="text-xs text-slate-400 mt-1">
-                    تصمیم‌گیری آژیر صددرصد در سرور ابری طبق موتور قوانین انجام می‌گیرد و دستورات به مینی‌پی‌سی صادر می‌شود.
-                  </p>
                 </div>
 
-                {/* 4 Mode Arming Controls */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full lg:w-auto">
                   <button
                     onClick={() => setArmedState('ARMED_AWAY')}
@@ -627,63 +704,50 @@ export function App() {
                 </div>
               </div>
 
-              {/* Hardware Actions & Indicators */}
+              {/* Hardware Actions */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
-                {/* Relay 1 Status */}
                 <div className="bg-[#141721] p-3.5 rounded-xl border border-slate-800 flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div className={`w-3 h-3 rounded-full ${guardState?.relay_active ? 'bg-amber-400 animate-ping' : 'bg-slate-600'}`}></div>
                     <div>
                       <div className="text-xs font-bold text-slate-200">رله خروجی شماره ۱ (گیت / درب)</div>
-                      <div className="text-[11px] text-slate-400">
-                        وضعیت: {guardState?.relay_active ? 'وصل (Active)' : 'قطع (Idle)'}
-                      </div>
+                      <div className="text-[11px] text-slate-400">وضعیت: {guardState?.relay_active ? 'وصل (Active)' : 'قطع (Idle)'}</div>
                     </div>
                   </div>
-                  <button
-                    onClick={() => testAgentRelay(primaryAgent?.id || 'agent-mini-01', 1)}
-                    className="px-2.5 py-1 text-[11px] font-semibold bg-[#1F2432] hover:bg-[#D4AF37] hover:text-black rounded-lg border border-slate-700 transition"
-                  >
+                  <button onClick={() => testAgentRelay(primaryAgent?.id || 'agent-mini-01', 1)} className="px-2.5 py-1 text-[11px] font-semibold bg-[#1F2432] hover:bg-[#D4AF37] hover:text-black rounded-lg border border-slate-700 transition">
                     تست ۱۰ ثانیه
                   </button>
                 </div>
 
-                {/* Physical Siren Status */}
                 <div className="bg-[#141721] p-3.5 rounded-xl border border-slate-800 flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div className={`w-3 h-3 rounded-full ${guardState?.siren_active ? 'bg-red-500 animate-ping' : 'bg-slate-600'}`}></div>
                     <div>
                       <div className="text-xs font-bold text-slate-200">آژیر فیزیکی محیطی (۱۱۰ دسی‌بل)</div>
-                      <div className="text-[11px] text-slate-400">
-                        وضعیت: {guardState?.siren_active ? 'در حال پخش آژیر!' : 'خاموش'}
-                      </div>
+                      <div className="text-[11px] text-slate-400">وضعیت: {guardState?.siren_active ? 'در حال پخش آژیر!' : 'خاموش'}</div>
                     </div>
                   </div>
-                  <button
-                    onClick={() => testAgentSiren(primaryAgent?.id || 'agent-mini-01')}
-                    className="px-2.5 py-1 text-[11px] font-semibold bg-[#1F2432] hover:bg-red-500 hover:text-white rounded-lg border border-slate-700 transition"
-                  >
+                  <button onClick={() => testAgentSiren(primaryAgent?.id || 'agent-mini-01')} className="px-2.5 py-1 text-[11px] font-semibold bg-[#1F2432] hover:bg-red-500 hover:text-white rounded-lg border border-slate-700 transition">
                     تست آژیر
                   </button>
                 </div>
 
-                {/* Cloud Outbound Policy Badge */}
                 <div className="bg-[#141721] p-3.5 rounded-xl border border-slate-800 flex items-center justify-between">
                   <div>
-                    <div className="text-xs font-bold text-slate-200">سیاست پهنای باند و امنیت شبکه</div>
+                    <div className="text-xs font-bold text-slate-200">معماری بدون استریم مداوم</div>
                     <div className="text-[11px] text-emerald-400 flex items-center gap-1">
                       <Check className="w-3.5 h-3.5" />
-                      <span>بدون پورت فوروارد • استریم فقط با درخواست</span>
+                      <span>No Request = No Stream</span>
                     </div>
                   </div>
                   <span className="text-[10px] font-mono-num bg-slate-800 text-slate-400 px-2 py-0.5 rounded">
-                    OUTBOUND TLS
+                    WebRTC H.264
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* LIVE VIEW CAMERA GRID (WebRTC On-Demand: NO USER REQUEST = NO STREAM) */}
+            {/* LIVE VIEW CAMERA GRID (WebRTC On-Demand) */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -692,20 +756,19 @@ export function App() {
                     <span>ماتریس نظارت تصویری دوربین‌ها (Live View Plane)</span>
                   </h3>
                   <p className="text-xs text-slate-400">
-                    قانون معماری: تا زمانی که دکمه «مشاهده زنده» را کلیک نکنید، هیچ ترافیک ویدیویی ارسال نمی‌شود.
+                    با کلیک روی «مشاهده زنده»، خط لوله WebRTC مستقیماً از مینی‌پی‌سی استارت می‌شود.
                   </p>
                 </div>
                 <div className="text-xs font-medium text-slate-400 bg-[#0F1118] px-3 py-1.5 rounded-xl border border-slate-800 flex items-center gap-2">
-                  <span>پخش فعال فعلی:</span>
+                  <span>پخش فعال:</span>
                   <span className="text-[#ECC665] font-bold font-mono-num">{Object.keys(activeLiveStreams).length} دوربین</span>
                 </div>
               </div>
 
-              {/* Camera Grid (2x2) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {cameras.map(cam => {
                   const isLive = !!activeLiveStreams[cam.id];
-                  const stats = streamingStats[cam.id] || { fps: 25, kbps: 2200 };
+                  const stats = streamingStats[cam.id] || { fps: 25, kbps: 2200, frame: 1 };
 
                   return (
                     <div
@@ -714,12 +777,10 @@ export function App() {
                         isLive ? 'border-[#D4AF37] ring-1 ring-[#D4AF37]/50' : 'border-slate-800 hover:border-slate-700'
                       }`}
                     >
-                      {/* Video Player Display Container */}
                       <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
                         {isLive ? (
-                          // Active Stream Visual Canvas
-                          <div className="w-full h-full relative bg-gradient-to-br from-slate-950 via-[#10141E] to-[#0A0C12] flex items-center justify-center">
-                            {/* Realistic Surveillance Watermark & Crosshairs */}
+                          <div className="w-full h-full relative bg-gradient-to-br from-slate-950 via-[#0e121b] to-[#0A0C12] flex items-center justify-center">
+                            {/* Animated Crosshair & Bounding Box Simulation */}
                             <div className="absolute inset-0 flex flex-col justify-between p-3 pointer-events-none z-10">
                               <div className="flex justify-between items-start">
                                 <div className="bg-black/60 backdrop-blur px-2 py-0.5 rounded text-[11px] text-emerald-400 font-mono-num flex items-center gap-1.5">
@@ -736,19 +797,17 @@ export function App() {
                               </div>
                             </div>
 
-                            {/* Camera Simulation View */}
                             <div className="text-center">
                               <div className="w-16 h-16 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center mx-auto mb-2 animate-pulse">
                                 <Video className="w-8 h-8 text-[#D4AF37]" />
                               </div>
-                              <div className="text-xs font-semibold text-slate-200">جریان زنده تصویری H.264 برقرار است</div>
+                              <div className="text-xs font-semibold text-slate-200">جریان زنده تصویری برقرار است</div>
                               <div className="text-[10px] text-slate-400 mt-0.5 font-mono-num">
                                 Session: {activeLiveStreams[cam.id].sessionId}
                               </div>
                             </div>
                           </div>
                         ) : (
-                          // Idle / Offline Stream Placeholder (Saves 100% Bandwidth)
                           <div className="text-center p-6">
                             <div className="w-14 h-14 rounded-2xl bg-[#141722] border border-slate-800 flex items-center justify-center mx-auto mb-3 text-slate-500">
                               <Video className="w-6 h-6" />
@@ -764,7 +823,6 @@ export function App() {
                         )}
                       </div>
 
-                      {/* Camera Card Footer Controls */}
                       <div className="p-3.5 bg-[#10131C] border-t border-slate-800 flex items-center justify-between">
                         <div>
                           <div className="text-xs font-bold text-white flex items-center gap-2">
@@ -778,7 +836,6 @@ export function App() {
                           </div>
                         </div>
 
-                        {/* On-Demand Toggle Button */}
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => triggerAISimulation('human_detected', cam.id)}
@@ -835,55 +892,33 @@ export function App() {
                 </div>
               </div>
 
-              {/* Simulation Action Buttons */}
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 mt-4">
-                <button
-                  onClick={() => triggerAISimulation('human_detected')}
-                  disabled={aiSimulating}
-                  className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-[#D4AF37] text-right transition group"
-                >
+                <button onClick={() => triggerAISimulation('human_detected')} disabled={aiSimulating} className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-[#D4AF37] text-right transition group">
                   <div className="text-xs font-bold text-white group-hover:text-[#ECC665]">تشخیص انسان</div>
                   <div className="text-[10px] text-slate-400 mt-0.5">Human Detection</div>
                 </button>
 
-                <button
-                  onClick={() => triggerAISimulation('unknown_face')}
-                  disabled={aiSimulating}
-                  className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-amber-500 text-right transition group"
-                >
+                <button onClick={() => triggerAISimulation('unknown_face')} disabled={aiSimulating} className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-amber-500 text-right transition group">
                   <div className="text-xs font-bold text-white group-hover:text-amber-400">چهره ناشناس</div>
                   <div className="text-[10px] text-slate-400 mt-0.5">Unknown Face Alert</div>
                 </button>
 
-                <button
-                  onClick={() => triggerAISimulation('vip_face')}
-                  disabled={aiSimulating}
-                  className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-blue-500 text-right transition group"
-                >
+                <button onClick={() => triggerAISimulation('vip_face')} disabled={aiSimulating} className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-blue-500 text-right transition group">
                   <div className="text-xs font-bold text-white group-hover:text-blue-400">شناسایی چهره VIP</div>
                   <div className="text-[10px] text-slate-400 mt-0.5">VIP Face Recognition</div>
                 </button>
 
-                <button
-                  onClick={() => triggerAISimulation('blocked_plate')}
-                  disabled={aiSimulating}
-                  className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-red-500 text-right transition group"
-                >
+                <button onClick={() => triggerAISimulation('blocked_plate')} disabled={aiSimulating} className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-red-500 text-right transition group">
                   <div className="text-xs font-bold text-white group-hover:text-red-400">پلاک مسدود / حراست</div>
                   <div className="text-[10px] text-slate-400 mt-0.5">Blacklisted Plate</div>
                 </button>
 
-                <button
-                  onClick={() => triggerAISimulation('vehicle_detected')}
-                  disabled={aiSimulating}
-                  className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-emerald-500 text-right transition group"
-                >
+                <button onClick={() => triggerAISimulation('vehicle_detected')} disabled={aiSimulating} className="p-3 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 hover:border-emerald-500 text-right transition group">
                   <div className="text-xs font-bold text-white group-hover:text-emerald-400">تشخیص خودرو</div>
                   <div className="text-[10px] text-slate-400 mt-0.5">Vehicle Classification</div>
                 </button>
               </div>
 
-              {/* Latest AI Result Terminal Card */}
               {aiLastResult && (
                 <div className="mt-4 p-4 rounded-xl bg-[#090A0E] border border-slate-800 font-mono text-xs">
                   <div className="flex items-center justify-between text-slate-400 pb-2 mb-2 border-b border-slate-800">
@@ -899,11 +934,6 @@ export function App() {
                           <div className="text-slate-400 text-[10px]">
                             Type: {d.type} • Confidence: {(d.confidence * 100).toFixed(1)}%
                           </div>
-                          {d.box && (
-                            <div className="text-slate-500 text-[10px] mt-0.5">
-                              Box: x={d.box.x}, y={d.box.y}, w={d.box.width}, h={d.box.height}
-                            </div>
-                          )}
                         </div>
                       ))}
                     </div>
@@ -936,9 +966,7 @@ export function App() {
           </div>
         )}
 
-        {/* ======================================================== */}
-        {/* VIEW 2: SECURITY EVENTS & ALARMS TIMELINE                */}
-        {/* ======================================================== */}
+        {/* TAB 2: EVENTS & ALARMS */}
         {currentTab === 'events' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -947,14 +975,9 @@ export function App() {
                   <Activity className="w-5 h-5 text-[#D4AF37]" />
                   <span>لاگ رویدادها و هشدارهای امنیتی مکران</span>
                 </h3>
-                <p className="text-xs text-slate-400">
-                  تمامی رویدادهای تصویری پس از پردازش هوش مصنوعی در سرور و تایید موتور قوانین در این بخش بایگانی می‌شوند.
-                </p>
+                <p className="text-xs text-slate-400">تمامی رویدادهای تصویری پس از پردازش هوش مصنوعی در سرور و تایید موتور قوانین در این بخش بایگانی می‌شوند.</p>
               </div>
-              <button
-                onClick={loadAllData}
-                className="px-3 py-1.5 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 text-xs font-semibold text-slate-300 flex items-center gap-1.5 transition"
-              >
+              <button onClick={loadAllData} className="px-3 py-1.5 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-800 text-xs font-semibold text-slate-300 flex items-center gap-1.5 transition">
                 <RefreshCw className="w-3.5 h-3.5" />
                 <span>بروزرسانی</span>
               </button>
@@ -977,9 +1000,7 @@ export function App() {
                           <div className="text-xs font-bold text-white flex items-center gap-2">
                             <span>{ev.label}</span>
                             {ev.alarm_triggered === 1 && (
-                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-500 text-white font-bold">
-                                ALARM
-                              </span>
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-500 text-white font-bold">ALARM</span>
                             )}
                           </div>
                           <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
@@ -987,9 +1008,7 @@ export function App() {
                             <span>•</span>
                             <span>زون: {ev.zone || 'عمومی'}</span>
                             <span>•</span>
-                            <span className="text-[#ECC665] font-mono-num">
-                              اطمینان: {(ev.confidence * 100).toFixed(0)}%
-                            </span>
+                            <span className="text-[#ECC665] font-mono-num">اطمینان: {(ev.confidence * 100).toFixed(0)}%</span>
                           </div>
                         </div>
                       </div>
@@ -1006,12 +1025,9 @@ export function App() {
           </div>
         )}
 
-        {/* ======================================================== */}
-        {/* VIEW 3: CAMERAS & MINI PC AGENT GATEWAY                  */}
-        {/* ======================================================== */}
+        {/* TAB 3: CAMERAS & AGENTS */}
         {currentTab === 'cameras' && (
           <div className="space-y-6">
-            {/* MINI PC HARDWARE TELEMETRY CARD */}
             {primaryAgent && (
               <div className="bg-[#0F1118] border border-[#D4AF37]/30 rounded-2xl p-6 shadow-xl">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
@@ -1032,84 +1048,51 @@ export function App() {
                     </div>
                   </div>
 
-                  {/* Remote Actions */}
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => testAgentRelay(primaryAgent.id, 1)}
-                      className="px-3 py-1.5 rounded-xl bg-[#171B26] hover:bg-[#D4AF37] hover:text-black border border-slate-700 text-xs font-semibold transition"
-                    >
+                    <button onClick={() => testAgentRelay(primaryAgent.id, 1)} className="px-3 py-1.5 rounded-xl bg-[#171B26] hover:bg-[#D4AF37] hover:text-black border border-slate-700 text-xs font-semibold transition">
                       تست رله ۱
                     </button>
-                    <button
-                      onClick={() => testAgentSiren(primaryAgent.id)}
-                      className="px-3 py-1.5 rounded-xl bg-[#171B26] hover:bg-red-500 hover:text-white border border-slate-700 text-xs font-semibold transition"
-                    >
+                    <button onClick={() => testAgentSiren(primaryAgent.id)} className="px-3 py-1.5 rounded-xl bg-[#171B26] hover:bg-red-500 hover:text-white border border-slate-700 text-xs font-semibold transition">
                       تست آژیر
                     </button>
-                    <button
-                      onClick={() => testAgentOTA(primaryAgent.id)}
-                      className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B38622] text-black text-xs font-bold transition flex items-center gap-1.5 shadow"
-                    >
+                    <button onClick={() => testAgentOTA(primaryAgent.id)} className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B38622] text-black text-xs font-bold transition flex items-center gap-1.5 shadow">
                       <Download className="w-3.5 h-3.5" />
                       <span>ارتقای OTA فوری</span>
                     </button>
                   </div>
                 </div>
 
-                {/* Telemetry Meters */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
-                  {/* CPU Meter */}
                   <div className="bg-[#141722] p-4 rounded-xl border border-slate-800">
                     <div className="text-xs text-slate-400">بار پردازنده مینی‌پی‌سی</div>
-                    <div className="text-xl font-bold font-mono-num text-emerald-400 mt-1">
-                      {primaryAgent.cpu_usage}%
-                    </div>
-                    <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
-                      <div className="bg-emerald-400 h-full rounded-full" style={{ width: `${primaryAgent.cpu_usage * 5}%` }}></div>
-                    </div>
+                    <div className="text-xl font-bold font-mono-num text-emerald-400 mt-1">{primaryAgent.cpu_usage}%</div>
                     <div className="text-[10px] text-slate-500 mt-1.5">سبک (بدون هوش مصنوعی سنگین)</div>
                   </div>
 
-                  {/* RAM Meter */}
                   <div className="bg-[#141722] p-4 rounded-xl border border-slate-800">
                     <div className="text-xs text-slate-400">حافظه رم (RAM)</div>
-                    <div className="text-xl font-bold font-mono-num text-blue-400 mt-1">
-                      {(primaryAgent.memory_usage_mb / 1024).toFixed(1)} GB
-                    </div>
-                    <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
-                      <div className="bg-blue-400 h-full rounded-full" style={{ width: '22%' }}></div>
-                    </div>
+                    <div className="text-xl font-bold font-mono-num text-blue-400 mt-1">{(primaryAgent.memory_usage_mb / 1024).toFixed(1)} GB</div>
                     <div className="text-[10px] text-slate-500 mt-1.5">از ۸ گیگابایت موجود</div>
                   </div>
 
-                  {/* Disk Meter */}
                   <div className="bg-[#141722] p-4 rounded-xl border border-slate-800">
                     <div className="text-xs text-slate-400">فضای ذخیره محلی (SSD)</div>
-                    <div className="text-xl font-bold font-mono-num text-purple-400 mt-1">
-                      {primaryAgent.disk_used_gb} GB
-                    </div>
-                    <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
-                      <div className="bg-purple-400 h-full rounded-full" style={{ width: '14%' }}></div>
-                    </div>
-                    <div className="text-[10px] text-slate-500 mt-1.5">از ۲۵۶ گیگابایت پرسرعت NVMe</div>
+                    <div className="text-xl font-bold font-mono-num text-purple-400 mt-1">{primaryAgent.disk_used_gb} GB</div>
+                    <div className="text-[10px] text-slate-500 mt-1.5">از ۲۵۶ گیگابایت NVMe</div>
                   </div>
 
-                  {/* Network / Outbound */}
                   <div className="bg-[#141722] p-4 rounded-xl border border-slate-800">
                     <div className="text-xs text-slate-400">اتصال کلاود کنترل‌پلین</div>
-                    <div className="text-xl font-bold font-mono-num text-emerald-400 mt-1">
-                      SECURE WSS
-                    </div>
+                    <div className="text-xl font-bold font-mono-num text-emerald-400 mt-1">SECURE WSS</div>
                     <div className="text-[10px] text-slate-500 mt-2 flex items-center gap-1">
                       <Wifi className="w-3 h-3 text-emerald-400" />
-                      <span>اتصال دائمی خروجی (Zero Inbound)</span>
+                      <span>اتصال خروجی امن (بدون پورت فوروارد)</span>
                     </div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* CAMERAS LIST & ADD CAMERA */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -1117,41 +1100,24 @@ export function App() {
                     <CamIcon className="w-4 h-4 text-[#D4AF37]" />
                     <span>فهرست دوربین‌ها و آداپتورهای CCTV متصل</span>
                   </h3>
-                  <p className="text-xs text-slate-400">
-                    پشتیبانی از پروتکل‌های استاندارد ONVIF و RTSP و برندهای داهوا (Dahua)، هایک‌ویژن (Hikvision) و ایکس‌ام‌آی (XMEye).
-                  </p>
+                  <p className="text-xs text-slate-400">پشتیبانی از پروتکل‌های استاندارد ONVIF و RTSP و برندهای داهوا (Dahua)، هایک‌ویژن (Hikvision) و ایکس‌ام‌آی (XMEye).</p>
                 </div>
-                <button
-                  onClick={() => setShowAddCamera(true)}
-                  className="px-3.5 py-1.5 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition flex items-center gap-1.5 shadow"
-                >
+                <button onClick={() => setShowAddCamera(true)} className="px-3.5 py-1.5 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition flex items-center gap-1.5 shadow">
                   <span>+ افزودن دوربین جدید</span>
                 </button>
               </div>
 
-              {/* Add Camera Modal */}
               {showAddCamera && (
                 <div className="bg-[#12151F] border border-[#D4AF37]/50 rounded-2xl p-6 shadow-2xl">
                   <h4 className="text-sm font-bold text-white mb-3">افزودن دوربین / کانال جدید به سیستم</h4>
                   <form onSubmit={handleAddCamera} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-xs text-slate-400 mb-1">نام دوربین</label>
-                      <input
-                        type="text"
-                        placeholder="دوربین سالن اداری"
-                        value={newCam.name}
-                        onChange={e => setNewCam({ ...newCam, name: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-xs text-white"
-                        required
-                      />
+                      <input type="text" placeholder="دوربین سالن اداری" value={newCam.name} onChange={e => setNewCam({ ...newCam, name: e.target.value })} className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-xs text-white" required />
                     </div>
                     <div>
                       <label className="block text-xs text-slate-400 mb-1">پروتکل ارتباطی (Adapter)</label>
-                      <select
-                        value={newCam.protocol}
-                        onChange={e => setNewCam({ ...newCam, protocol: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-xs text-white"
-                      >
+                      <select value={newCam.protocol} onChange={e => setNewCam({ ...newCam, protocol: e.target.value })} className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-xs text-white">
                         <option value="ONVIF">ONVIF (استاندارد جهانی)</option>
                         <option value="RTSP">Universal RTSP</option>
                         <option value="DAHUA">Dahua Technology</option>
@@ -1162,11 +1128,7 @@ export function App() {
                     </div>
                     <div>
                       <label className="block text-xs text-slate-400 mb-1">زون حفاظتی (Security Zone)</label>
-                      <select
-                        value={newCam.zone}
-                        onChange={e => setNewCam({ ...newCam, zone: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-xs text-white"
-                      >
+                      <select value={newCam.zone} onChange={e => setNewCam({ ...newCam, zone: e.target.value })} className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-xs text-white">
                         <option value="entrance">ورودی اصلی (Entrance)</option>
                         <option value="perimeter">پیرامونی و دیوار (Perimeter)</option>
                         <option value="gate_lpr">گیت پلاک‌خوان (Gate LPR)</option>
@@ -1175,25 +1137,13 @@ export function App() {
                       </select>
                     </div>
                     <div className="sm:col-span-3 flex justify-end gap-2 mt-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowAddCamera(false)}
-                        className="px-4 py-2 rounded-xl bg-slate-800 text-xs font-semibold text-slate-300"
-                      >
-                        انصراف
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-4 py-2 rounded-xl bg-[#D4AF37] text-black text-xs font-bold"
-                      >
-                        ثبت و اتصال دوربین
-                      </button>
+                      <button type="button" onClick={() => setShowAddCamera(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-xs font-semibold text-slate-300">انصراف</button>
+                      <button type="submit" className="px-4 py-2 rounded-xl bg-[#D4AF37] text-black text-xs font-bold">ثبت و اتصال دوربین</button>
                     </div>
                   </form>
                 </div>
               )}
 
-              {/* Cameras Table */}
               <div className="bg-[#0F1118] border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
                 <table className="w-full text-right text-xs">
                   <thead className="bg-[#141722] text-slate-400 border-b border-slate-800">
@@ -1201,7 +1151,7 @@ export function App() {
                       <th className="p-3.5">نام دوربین</th>
                       <th className="p-3.5">آداپتور / برند</th>
                       <th className="p-3.5">زون حفاظتی</th>
-                      <th className="p-3.5">کیفیت و نرخ فریم</th>
+                      <th className="p-3.5">کیفیت و فریم</th>
                       <th className="p-3.5">وضعیت</th>
                       <th className="p-3.5 text-left">عملیات</th>
                     </tr>
@@ -1211,9 +1161,7 @@ export function App() {
                       <tr key={cam.id} className="hover:bg-[#131622] transition">
                         <td className="p-3.5 font-bold text-white">{cam.name}</td>
                         <td className="p-3.5">
-                          <span className="px-2 py-0.5 rounded bg-slate-800 text-[#ECC665] font-mono-num text-[11px]">
-                            {cam.protocol}
-                          </span>
+                          <span className="px-2 py-0.5 rounded bg-slate-800 text-[#ECC665] font-mono-num text-[11px]">{cam.protocol}</span>
                         </td>
                         <td className="p-3.5 text-slate-300">{cam.zone}</td>
                         <td className="p-3.5 font-mono-num text-slate-400">{cam.resolution} @ {cam.fps}fps</td>
@@ -1224,10 +1172,7 @@ export function App() {
                           </span>
                         </td>
                         <td className="p-3.5 text-left">
-                          <button
-                            onClick={() => toggleLiveStream(cam)}
-                            className="px-3 py-1 rounded-lg bg-[#181C28] hover:bg-[#D4AF37] hover:text-black font-semibold text-[11px] transition"
-                          >
+                          <button onClick={() => toggleLiveStream(cam)} className="px-3 py-1 rounded-lg bg-[#181C28] hover:bg-[#D4AF37] hover:text-black font-semibold text-[11px] transition">
                             مشاهده استریم
                           </button>
                         </td>
@@ -1240,9 +1185,226 @@ export function App() {
           </div>
         )}
 
-        {/* ======================================================== */}
-        {/* VIEW 4: SECURITY RULE ENGINE CONFIGURATOR                */}
-        {/* ======================================================== */}
+        {/* TAB 4: ATTENDANCE & FACE CLOCK-IN */}
+        {currentTab === 'attendance' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-[#D4AF37]" />
+                  <span>سامانه حضور و غیاب هوشمند با تشخیص چهره (Face Attendance)</span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  ثبت خودکار ورود و خروج پرسنل با هوش مصنوعی سرور بدون نیاز به تماس فیزیکی یا کارت تردد.
+                </p>
+              </div>
+              <button
+                onClick={testAttendanceClockIn}
+                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B38622] text-black text-xs font-bold transition flex items-center gap-1.5 shadow"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>ثبت تردد آزمایشی با چهره</span>
+              </button>
+            </div>
+
+            <div className="bg-[#0F1118] border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-[#141722] text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th className="p-3.5">نام پرسنل</th>
+                    <th className="p-3.5">نوع تردد</th>
+                    <th className="p-3.5">دوربین ثبت‌کننده</th>
+                    <th className="p-3.5">میزان اطمینان چهره</th>
+                    <th className="p-3.5 text-left">زمان و تاریخ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/80">
+                  {attendance.map(att => (
+                    <tr key={att.id} className="hover:bg-[#131622] transition">
+                      <td className="p-3.5 font-bold text-white flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-slate-800 border border-[#D4AF37]/40 flex items-center justify-center text-[10px] text-[#ECC665]">
+                          {att.person_name.substring(0, 1)}
+                        </div>
+                        <span>{att.person_name}</span>
+                      </td>
+                      <td className="p-3.5">
+                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                          att.check_type === 'CHECK_IN' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        }`}>
+                          {att.check_type === 'CHECK_IN' ? 'ورود (Check-in)' : 'خروج (Check-out)'}
+                        </span>
+                      </td>
+                      <td className="p-3.5 text-slate-300 font-mono-num">{att.camera_id}</td>
+                      <td className="p-3.5 font-mono-num text-[#ECC665]">{(att.confidence * 100).toFixed(1)}% Match</td>
+                      <td className="p-3.5 text-left font-mono-num text-slate-400">
+                        {new Date(att.timestamp).toLocaleString('fa-IR')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 5: FACILITY MANAGEMENT & BUILDING AUTOMATION */}
+        {currentTab === 'facilities' && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Lightbulb className="w-4 h-4 text-[#D4AF37]" />
+                <span>مدیریت تاسیسات، تجهیزات هوشمند و اتوماسیون ساختمان</span>
+              </h3>
+              <p className="text-xs text-slate-400">
+                کنترل متمرکز روشنایی، قفل‌های الکترونیکی، سیستم تهویه، جک بازویی و پایش مصرف انرژی از طریق رله‌های مینی‌پی‌سی مکران.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {facilities.map(dev => (
+                <div key={dev.id} className="bg-[#0F1118] border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                      <span className="text-xs font-bold text-white">{dev.name}</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono-num">{dev.type}</span>
+                    </div>
+
+                    <div className="mt-4 space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">موقعیت و زون:</span>
+                        <span className="text-slate-200 font-semibold">{dev.zone}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">وضعیت کنونی:</span>
+                        <span className={`font-bold font-mono-num ${
+                          dev.state === 'ON' || dev.state === 'OPEN' ? 'text-emerald-400' : 'text-slate-400'
+                        }`}>
+                          {dev.state} {dev.value > 0 ? `(${dev.value})` : ''}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between">
+                    <span className="text-[10px] text-slate-500 font-mono-num">
+                      رله متصل به Agent
+                    </span>
+                    <button
+                      onClick={() => handleToggleFacility(dev)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                        dev.state === 'ON' || dev.state === 'OPEN'
+                          ? 'bg-amber-500 hover:bg-amber-400 text-black shadow'
+                          : 'bg-[#181C28] hover:bg-slate-700 text-slate-200 border border-slate-700'
+                      }`}
+                    >
+                      تغییر وضعیت (سوئیچ)
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 6: E-COMMERCE PRODUCTS CATALOG */}
+        {currentTab === 'shop' && (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <ShoppingBag className="w-4 h-4 text-[#D4AF37]" />
+                <span>فروشگاه آنلاین تجهیزات سخت‌افزاری و پکیج‌های مکران گارد</span>
+              </h3>
+              <p className="text-xs text-slate-400">
+                تامین مستقیم مینی‌پی‌سی‌های گیت‌وی N100، دوربین‌های هوشمند 4K، دستگاه‌های NVR صنعتی و ماژول‌های رله تحت شبکه.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {products.map(p => (
+                <div key={p.id} className="bg-[#0F1118] border border-slate-800 hover:border-[#D4AF37]/40 rounded-2xl p-5 shadow-xl flex flex-col justify-between transition group">
+                  <div>
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#D4AF37]/15 text-[#ECC665] font-mono-num">
+                        {p.sku}
+                      </span>
+                      <span className="text-[11px] text-emerald-400 font-semibold">موجود در انبار چابهار ({p.stock})</span>
+                    </div>
+
+                    <h4 className="text-sm font-bold text-white group-hover:text-[#ECC665] transition">{p.name}</h4>
+                    <p className="text-xs text-slate-400 mt-2 leading-relaxed line-clamp-3">{p.description}</p>
+                  </div>
+
+                  <div className="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] text-slate-400">قیمت مصرف‌کننده:</div>
+                      <div className="text-sm font-extrabold text-[#D4AF37] font-mono-num">
+                        {p.price.toLocaleString('fa-IR')} تومان
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => setCartModal(p)}
+                      className="px-3 py-1.5 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition flex items-center gap-1.5 shadow"
+                    >
+                      <ShoppingCart className="w-3.5 h-3.5" />
+                      <span>ثبت سفارش</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Cart / Order Checkout Modal */}
+            {cartModal && (
+              <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-[#121520] border border-[#D4AF37]/50 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <h4 className="text-sm font-bold text-white">صدور پیش‌فاکتور و ثبت سفارش خرید</h4>
+                    <button onClick={() => setCartModal(null)} className="text-slate-400 hover:text-white">✕</button>
+                  </div>
+
+                  <form onSubmit={handlePlaceOrder} className="mt-4 space-y-3">
+                    <div className="p-3 rounded-xl bg-[#181B26] border border-slate-800 text-xs">
+                      <div className="font-bold text-white">{cartModal.name}</div>
+                      <div className="text-[#ECC665] font-mono-num mt-1">{cartModal.price.toLocaleString('fa-IR')} تومان</div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">نام خریدار / شرکت متقاضی</label>
+                      <input
+                        type="text"
+                        placeholder="مثال: حراست منطقه آزاد"
+                        value={orderCustomer.name}
+                        onChange={e => setOrderCustomer({ ...orderCustomer, name: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-xs text-white"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">شماره تماس هماهنگی</label>
+                      <input
+                        type="tel"
+                        placeholder="0912..."
+                        value={orderCustomer.phone}
+                        onChange={e => setOrderCustomer({ ...orderCustomer, phone: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-xs text-white"
+                        required
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2">
+                      <button type="button" onClick={() => setCartModal(null)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-xs text-slate-300">انصراف</button>
+                      <button type="submit" className="px-4 py-2 rounded-xl bg-[#D4AF37] text-black text-xs font-bold">تایید و ثبت سفارش نهایی</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 7: RULES */}
         {currentTab === 'rules' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -1308,12 +1470,9 @@ export function App() {
           </div>
         )}
 
-        {/* ======================================================== */}
-        {/* VIEW 5: BIOMETRIC FACES & LICENSE PLATES DIRECTORY       */}
-        {/* ======================================================== */}
+        {/* TAB 8: BIOMETRICS & LPR */}
         {currentTab === 'biometrics' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Faces Section */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -1323,10 +1482,7 @@ export function App() {
                   </h3>
                   <p className="text-xs text-slate-400">لیست کارمندان، افراد VIP و لیست مسدودی حراست</p>
                 </div>
-                <button
-                  onClick={() => setShowAddFace(true)}
-                  className="px-3 py-1.5 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition"
-                >
+                <button onClick={() => setShowAddFace(true)} className="px-3 py-1.5 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition">
                   + افزودن چهره
                 </button>
               </div>
@@ -1334,19 +1490,8 @@ export function App() {
               {showAddFace && (
                 <form onSubmit={handleAddFace} className="bg-[#121520] p-4 rounded-xl border border-slate-700 space-y-3">
                   <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      placeholder="نام و نام خانوادگی"
-                      value={newFace.name}
-                      onChange={e => setNewFace({ ...newFace, name: e.target.value })}
-                      className="px-3 py-2 rounded-lg bg-[#181B26] border border-slate-700 text-xs text-white"
-                      required
-                    />
-                    <select
-                      value={newFace.category}
-                      onChange={e => setNewFace({ ...newFace, category: e.target.value as any })}
-                      className="px-3 py-2 rounded-lg bg-[#181B26] border border-slate-700 text-xs text-white"
-                    >
+                    <input type="text" placeholder="نام و نام خانوادگی" value={newFace.name} onChange={e => setNewFace({ ...newFace, name: e.target.value })} className="px-3 py-2 rounded-lg bg-[#181B26] border border-slate-700 text-xs text-white" required />
+                    <select value={newFace.category} onChange={e => setNewFace({ ...newFace, category: e.target.value as any })} className="px-3 py-2 rounded-lg bg-[#181B26] border border-slate-700 text-xs text-white">
                       <option value="VIP">VIP (مهمان ویژه)</option>
                       <option value="EMPLOYEE">EMPLOYEE (پرسنل)</option>
                       <option value="VISITOR">VISITOR (مراجع)</option>
@@ -1384,7 +1529,6 @@ export function App() {
               </div>
             </div>
 
-            {/* License Plates Section */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -1394,10 +1538,7 @@ export function App() {
                   </h3>
                   <p className="text-xs text-slate-400">لیست مجاز و مسدود گیت ورودی خودرویی</p>
                 </div>
-                <button
-                  onClick={() => setShowAddPlate(true)}
-                  className="px-3 py-1.5 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition"
-                >
+                <button onClick={() => setShowAddPlate(true)} className="px-3 py-1.5 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition">
                   + افزودن پلاک
                 </button>
               </div>
@@ -1405,22 +1546,8 @@ export function App() {
               {showAddPlate && (
                 <form onSubmit={handleAddPlate} className="bg-[#121520] p-4 rounded-xl border border-slate-700 space-y-3">
                   <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      placeholder="شماره پلاک (مثال: 85ج124-ایران85)"
-                      value={newPlate.plate_number}
-                      onChange={e => setNewPlate({ ...newPlate, plate_number: e.target.value })}
-                      className="px-3 py-2 rounded-lg bg-[#181B26] border border-slate-700 text-xs text-white"
-                      required
-                    />
-                    <input
-                      type="text"
-                      placeholder="مالک خودرو"
-                      value={newPlate.owner_name}
-                      onChange={e => setNewPlate({ ...newPlate, owner_name: e.target.value })}
-                      className="px-3 py-2 rounded-lg bg-[#181B26] border border-slate-700 text-xs text-white"
-                      required
-                    />
+                    <input type="text" placeholder="شماره پلاک (مثال: 85ج124-ایران85)" value={newPlate.plate_number} onChange={e => setNewPlate({ ...newPlate, plate_number: e.target.value })} className="px-3 py-2 rounded-lg bg-[#181B26] border border-slate-700 text-xs text-white" required />
+                    <input type="text" placeholder="مالک خودرو" value={newPlate.owner_name} onChange={e => setNewPlate({ ...newPlate, owner_name: e.target.value })} className="px-3 py-2 rounded-lg bg-[#181B26] border border-slate-700 text-xs text-white" required />
                   </div>
                   <div className="flex justify-end gap-2">
                     <button type="button" onClick={() => setShowAddPlate(false)} className="px-3 py-1.5 text-xs text-slate-400">انصراف</button>
@@ -1433,12 +1560,8 @@ export function App() {
                 {plates.map(plt => (
                   <div key={plt.id} className="p-3.5 flex items-center justify-between">
                     <div>
-                      <div className="text-xs font-bold text-white font-mono-num tracking-wide">
-                        {plt.plate_number}
-                      </div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">
-                        مالک: {plt.owner_name} • مدل: {plt.vehicle_model || 'ثبت نشده'}
-                      </div>
+                      <div className="text-xs font-bold text-white font-mono-num tracking-wide">{plt.plate_number}</div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">مالک: {plt.owner_name} • مدل: {plt.vehicle_model || 'ثبت نشده'}</div>
                     </div>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                       plt.category === 'ALLOWED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
@@ -1454,9 +1577,7 @@ export function App() {
           </div>
         )}
 
-        {/* ======================================================== */}
-        {/* VIEW 6: COMMERCIAL SAAS & CRM SITES                      */}
-        {/* ======================================================== */}
+        {/* TAB 9: COMMERCIAL SAAS & CRM */}
         {currentTab === 'commercial' && (
           <div className="space-y-6">
             <div className="bg-[#0F1118] border border-[#D4AF37]/30 rounded-2xl p-6 shadow-xl">
@@ -1500,7 +1621,6 @@ export function App() {
               </div>
             </div>
 
-            {/* CRM Sites List */}
             <div className="space-y-4">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Users className="w-4 h-4 text-[#D4AF37]" />
@@ -1556,4 +1676,5 @@ export function App() {
     </div>
   );
 }
+
 export default App;

@@ -118,8 +118,57 @@ export interface WebRTCSignalingMessage {
   candidate?: any;
 }
 
-// Notification Target
-export interface NotificationPayload {
+// Attendance Contract
+export interface AttendanceRecord {
+  id: string;
+  tenant_id: string;
+  person_id: string;
+  person_name: string;
+  camera_id: string;
+  check_type: 'CHECK_IN' | 'CHECK_OUT';
+  confidence: number;
+  snapshot_url?: string;
+  timestamp: string;
+}
+
+// Facility Management & Building Automation Contract
+export interface FacilityDevice {
+  id: string;
+  tenant_id: string;
+  agent_id: string;
+  name: string;
+  type: 'LIGHT' | 'HVAC' | 'SMART_LOCK' | 'GATE' | 'POWER_METER';
+  state: 'ON' | 'OFF' | 'OPEN' | 'CLOSED';
+  value?: number; // e.g. temperature 24C or kW 4.2
+  zone: string;
+  last_updated: string;
+}
+
+// E-Commerce Product Contract
+export interface ShopProduct {
+  id: string;
+  name: string;
+  description: string;
+  category: 'MINI_PC_AGENT' | 'CAMERA_4K' | 'NVR' | 'SENSORS_RELAYS' | 'PACKAGES';
+  price: number;
+  stock: number;
+  image_url: string;
+  sku: string;
+  specifications: Record<string, string>;
+}
+
+// E-Commerce Order Contract
+export interface ShopOrder {
+  id: string;
+  tenant_id: string;
+  customer_name: string;
+  phone: string;
+  total_amount: number;
+  status: 'PENDING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED';
+  items: Array<{ product_id: string; product_name: string; quantity: number; unit_price: number }>;
+  created_at: string;
+}
+
   tenant_id: string;
   event_id: string;
   title: string;

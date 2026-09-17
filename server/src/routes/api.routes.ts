@@ -338,6 +338,129 @@ apiRouter.get('/billing', (req: AuthenticatedRequest, res) => {
   });
 });
 
+// --- ATTENDANCE (Face Recognition Clock-in/out) ---
+apiRouter.get('/attendance', (req: AuthenticatedRequest, res) => {
+  const records = dbService.query(
+    'SELECT * FROM attendance WHERE tenant_id = ? ORDER BY timestamp DESC LIMIT 50',
+    [req.tenantId]
+  );
+  res.json(records);
+});
+
+apiRouter.post('/attendance/check-in', (req: AuthenticatedRequest, res) => {
+  const { person_id, person_name, camera_id, check_type, confidence, snapshot_url } = req.body;
+  const id = 'att-' + uuidv4().substring(0, 8);
+  const now = new Date().toISOString();
+
+  dbService.run(`
+    INSERT INTO attendance (id, tenant_id, person_id, person_name, camera_id, check_type, confidence, snapshot_url, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    id,
+    req.tenantId,
+    person_id || 'face-01',
+    person_name || 'مهندس مکرانی',
+    camera_id || 'cam-01',
+    check_type || 'CHECK_IN',
+    confidence || 0.98,
+    snapshot_url || '',
+    now
+  ]);
+
+  agentService.broadcastToClients('new_attendance', {
+    id,
+    person_name,
+    check_type,
+    timestamp: now
+  });
+
+  res.json({ id, success: true });
+});
+
+// --- FACILITY MANAGEMENT & BUILDING AUTOMATION ---
+apiRouter.get('/facilities', (req: AuthenticatedRequest, res) => {
+  const devices = dbService.query(
+    'SELECT * FROM facility_devices WHERE tenant_id = ? ORDER BY name ASC',
+    [req.tenantId]
+  );
+  res.json(devices);
+});
+
+apiRouter.post('/facilities/:id/toggle', (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  const { state, value } = req.body;
+  const now = new Date().toISOString();
+
+  const dev = dbService.queryOne(
+    'SELECT * FROM facility_devices WHERE id = ? AND tenant_id = ?',
+    [id, req.tenantId]
+  );
+
+  if (!dev) {
+    res.status(404).json({ error: 'دستگاه هوشمند تاسیسات یافت نشد' });
+    return;
+  }
+
+  const newState = state !== undefined ? state : (dev.state === 'ON' ? 'OFF' : 'ON');
+
+  dbService.run(`
+    UPDATE facility_devices 
+    SET state = ?, value = ?, last_updated = ?
+    WHERE id = ? AND tenant_id = ?
+  `, [newState, value !== undefined ? value : dev.value, now, id, req.tenantId]);
+
+  // Dispatch command to Mini PC agent
+  agentService.sendCommand(dev.agent_id, {
+    command: 'trigger_relay',
+    parameters: { device_id: id, state: newState, type: dev.type },
+    issued_at: now
+  });
+
+  agentService.broadcastToClients('facility_state_change', {
+    deviceId: id,
+    state: newState,
+    value: dev.value,
+    timestamp: now
+  });
+
+  res.json({ success: true, id, state: newState });
+});
+
+// --- E-COMMERCE PRODUCTS & ORDERS ---
+apiRouter.get('/ecommerce/products', (req: AuthenticatedRequest, res) => {
+  const products = dbService.query('SELECT * FROM ecommerce_products ORDER BY price ASC');
+  res.json(products);
+});
+
+apiRouter.get('/ecommerce/orders', (req: AuthenticatedRequest, res) => {
+  const orders = dbService.query(
+    'SELECT * FROM ecommerce_orders WHERE tenant_id = ? ORDER BY created_at DESC',
+    [req.tenantId]
+  );
+  res.json(orders);
+});
+
+apiRouter.post('/ecommerce/orders', (req: AuthenticatedRequest, res) => {
+  const { customer_name, phone, items, total_amount } = req.body;
+  const id = 'ord-' + uuidv4().substring(0, 8);
+  const now = new Date().toISOString();
+
+  dbService.run(`
+    INSERT INTO ecommerce_orders (id, tenant_id, customer_name, phone, total_amount, status, items, created_at)
+    VALUES (?, ?, ?, ?, ?, 'CONFIRMED', ?, ?)
+  `, [
+    id,
+    req.tenantId,
+    customer_name || 'مشتری مکران',
+    phone || '+989120000000',
+    total_amount || 0,
+    JSON.stringify(items || []),
+    now
+  ]);
+
+  res.json({ id, success: true, status: 'CONFIRMED' });
+});
+
 // --- CRM & SITES ---
 apiRouter.get('/crm', (req: AuthenticatedRequest, res) => {
   const customers = dbService.query('SELECT * FROM crm_customers WHERE tenant_id = ? ORDER BY created_at DESC', [req.tenantId]);

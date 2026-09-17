@@ -303,6 +303,62 @@ export class DatabaseService {
         FOREIGN KEY (tenant_id) REFERENCES tenants(id)
       );
 
+      -- Attendance (Face recognition based check-in/out)
+      CREATE TABLE IF NOT EXISTS attendance (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        person_id TEXT NOT NULL,
+        person_name TEXT NOT NULL,
+        camera_id TEXT NOT NULL,
+        check_type TEXT NOT NULL, -- CHECK_IN, CHECK_OUT
+        confidence REAL DEFAULT 0.95,
+        snapshot_url TEXT,
+        timestamp TEXT NOT NULL,
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+      );
+
+      -- Facility Management & Building Automation
+      CREATE TABLE IF NOT EXISTS facility_devices (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL, -- LIGHT, HVAC, SMART_LOCK, GATE, POWER_METER
+        state TEXT NOT NULL DEFAULT 'OFF',
+        value REAL DEFAULT 0,
+        zone TEXT DEFAULT 'central',
+        last_updated TEXT NOT NULL,
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+        FOREIGN KEY (agent_id) REFERENCES agents(id)
+      );
+
+      -- E-Commerce Shop Products
+      CREATE TABLE IF NOT EXISTS ecommerce_products (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        category TEXT NOT NULL,
+        price INTEGER NOT NULL,
+        stock INTEGER DEFAULT 10,
+        image_url TEXT,
+        sku TEXT UNIQUE NOT NULL,
+        specifications TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      -- E-Commerce Orders
+      CREATE TABLE IF NOT EXISTS ecommerce_orders (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        customer_name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        total_amount INTEGER NOT NULL,
+        status TEXT DEFAULT 'CONFIRMED',
+        items TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+      );
+
       -- Audit Logs
       CREATE TABLE IF NOT EXISTS audit_logs (
         id TEXT PRIMARY KEY,
@@ -466,11 +522,93 @@ export class DatabaseService {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, ['sub-01', 'tenant-makoran-01', 'Makoran Guard Enterprise AI', 45000000, 32, 8, 60, 1, 'ACTIVE', '2026-10-17', now]);
 
-    // 11. CRM Customers
+    // 12. Attendance Records
     this.run(`
-      INSERT INTO crm_customers (id, tenant_id, name, company, phone, email, city, site_address, status, devices_installed, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, ['crm-01', 'tenant-makoran-01', 'حاج عبدالحکیم ریگی', 'مجتمع تجاری فردوس چابهار', '+989153410000', 'ferdowsi@makoran.ir', 'منطقه آزاد چابهار', 'بلوار امام خمینی، جنب مجتمع فردوس', 'ACTIVE', 16, now]);
+      INSERT INTO attendance (id, tenant_id, person_id, person_name, camera_id, check_type, confidence, snapshot_url, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, ['att-01', 'tenant-makoran-01', 'face-01', 'مهندس رضا مکرانی', 'cam-01', 'CHECK_IN', 0.98, '/assets/avatars/reza.jpg', now]);
+
+    // 13. Facility & Building Automation Devices
+    const facilityDevices = [
+      ['fac-01', 'tenant-makoran-01', 'agent-mini-01', 'روشنایی پروژکتور محوطه و پیرامون', 'LIGHT', 'ON', 100, 'perimeter'],
+      ['fac-02', 'tenant-makoran-01', 'agent-mini-01', 'سامانه سرمایش سرور روم و کنترل دما', 'HVAC', 'ON', 21.5, 'server_room'],
+      ['fac-03', 'tenant-makoran-01', 'agent-mini-01', 'قفل الکترونیکی هوشمند درب انبار مرکزی', 'SMART_LOCK', 'LOCKED', 0, 'vault'],
+      ['fac-04', 'tenant-makoran-01', 'agent-mini-01', 'موتور جک بازویی درب تردد خودرو', 'GATE', 'CLOSED', 0, 'gate_lpr'],
+      ['fac-05', 'tenant-makoran-01', 'agent-mini-01', 'پاورمیتر و سنجش هوشمند توان شبکه', 'POWER_METER', 'ON', 3.8, 'main_panel']
+    ];
+
+    for (const d of facilityDevices) {
+      this.run(`
+        INSERT INTO facility_devices (id, tenant_id, agent_id, name, type, state, value, zone, last_updated)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [...d, now]);
+    }
+
+    // 14. E-Commerce Products
+    const products = [
+      [
+        'prod-01',
+        'مینی‌پی‌سی گیت‌وی مکران وان (Intel N100 Mini PC Agent)',
+        'تجهیز سخت‌افزاری اختصاصی گیت‌وی مکران با پردازنده ۴ هسته‌ای Intel N100، رم ۸ گیگابایت DDR5، حافظه ۲۵۶ گیگابایت NVMe، دو پورت شبکه گیگابیتی و بدنه آلومینیومی بدون فن (Fanless) مناسب کارکرد مداوم ۲۴/۷.',
+        'MINI_PC_AGENT',
+        18500000,
+        25,
+        '/assets/products/mini-pc.png',
+        'MK-N100-PRO',
+        JSON.stringify({ cpu: 'Intel N100 3.4GHz', ram: '8GB DDR5', storage: '256GB SSD NVMe', lan: 'Dual 2.5GbE' })
+      ],
+      [
+        'prod-02',
+        'دوربین تحت شبکه ۴K مکران گارد (Ultra HD 8MP AI Camera)',
+        'دوربین هوشمند بولت ضدآب IP67 با رزولوشن 8MP 4K، سنسور Sony Starvis دید در شب رنگی، پشتیبانی از پروتکل ONVIF و RTSP، لنز ۲.۸ میلی‌متر و دید در شب ۶۰ متر.',
+        'CAMERA_4K',
+        9800000,
+        40,
+        '/assets/products/camera-4k.png',
+        'MK-IPC-8MP-STAR',
+        JSON.stringify({ resolution: '4K (3840x2160)', sensor: 'Sony Starvis', lens: '2.8mm Wide', poe: 'Standard IEEE 802.3af' })
+      ],
+      [
+        'prod-03',
+        'دستگاه NVR ۳۲ کاناله تحت شبکه صنعتی مکران',
+        'دستگاه ذخیره‌ساز ویدئویی ۳۲ کاناله با پهنای باند ورودی ۳۲۰ مگابیت، پشتیبانی از ۴ هارد تا ظرفیت ۶۴ ترابایت، خروجی 4K HDMI، ورودی/خروجی آلارم فیزیکی و سازگاری کامل با مینی‌پی‌سی مکران.',
+        'NVR',
+        24500000,
+        12,
+        '/assets/products/nvr-32ch.png',
+        'MK-NVR-32CH-4K',
+        JSON.stringify({ channels: '32CH IP', hdd: '4x SATA (Up to 16TB each)', bandwidth: '320 Mbps', output: 'HDMI 4K + VGA' })
+      ],
+      [
+        'prod-04',
+        'ماژول رله صنعتی ۴ کاناله تحت شبکه (IoT Relay Module)',
+        'ماژول تحریک سخت‌افزاری رله با پورت شبکه RJ45 و پروتکل Modbus/TCP جهت اتصال به آژیر، پروژکتور، قفل‌های الکترونیکی و جک پارکینگ با کنترل مستقیم از مینی‌پی‌سی مکران.',
+        'SENSORS_RELAYS',
+        4200000,
+        50,
+        '/assets/products/relay-module.png',
+        'MK-RELAY-4CH-NET',
+        JSON.stringify({ channels: '4x Relay Output (10A 250VAC)', input: '4x Digital Input', interface: 'Ethernet RJ45', protocol: 'TCP/IP' })
+      ],
+      [
+        'prod-05',
+        'پکیج جامع امنیت هوشمند ویلا و کارگاه صنعتی مکران گارد',
+        'شامل ۱ دستگاه مینی‌پی‌سی گیت‌وی N100 + ۴ عدد دوربین 4K سونی + سوییچ صنعتی POE + آژیر ۱۱۰ دسی‌بل + اشتراک یک‌ساله ابری مکران وان.',
+        'PACKAGES',
+        68000000,
+        8,
+        '/assets/products/package-complete.png',
+        'MK-BUNDLE-ENTERPRISE',
+        JSON.stringify({ agent: '1x Mini PC N100', cameras: '4x 4K Sony IPC', switch: '5-Port Gigabit POE', license: '1-Year Enterprise Cloud' })
+      ]
+    ];
+
+    for (const p of products) {
+      this.run(`
+        INSERT INTO ecommerce_products (id, name, description, category, price, stock, image_url, sku, specifications, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [...p, now]);
+    }
 
     console.log('[DB] Seeding completed successfully.');
   }

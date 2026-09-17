@@ -1,0 +1,18 @@
+FROM node:22-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+COPY shared ./shared
+COPY agent ./agent
+
+RUN npm install
+
+ENV NODE_ENV=production
+ENV CLOUD_HOST=cloud.makoran.io
+ENV CLOUD_PORT=443
+ENV AGENT_ID=agent-n100-mini
+ENV TENANT_ID=tenant-makoran-01
+ENV AGENT_TOKEN=agt_tok_makoran_secret_01
+
+CMD ["npx", "tsx", "agent/src/index.ts"]
