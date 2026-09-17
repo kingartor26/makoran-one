@@ -13,8 +13,9 @@
     "dev:server": "npm run dev --workspace=server",
     "dev:agent": "npm run dev --workspace=agent",
     "dev:client": "npm run dev --workspace=client",
-    "build": "npm run build --workspaces --if-present",
-    "test": "node tests/vertical-slice.test.mjs && node tests/multi-tenancy.test.mjs && node tests/ai-priority.test.mjs && node tests/rule-engine.test.mjs && npx tsx tests/camera-discovery.test.mjs && npx tsx tests/saas-features.test.mjs"
+    "build:client": "vite build --config client/vite.config.ts client",
+    "build": "npm run build --workspaces --if-present && npm run build:client",
+    "test": "node tests/vertical-slice.test.mjs && node tests/multi-tenancy.test.mjs && node tests/ai-priority.test.mjs && node tests/rule-engine.test.mjs && npx tsx tests/camera-discovery.test.mjs && npx tsx tests/saas-features.test.mjs && node tests/enterprise-scale.test.mjs"
   },
   "keywords": [
     "makoran",

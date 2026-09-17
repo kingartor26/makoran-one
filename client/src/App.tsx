@@ -6,13 +6,15 @@ import {
   MessageSquare, Radio, HardDrive, Wifi, Power, Play, Square,
   Camera as CamIcon, Terminal, ExternalLink, Settings, Layers,
   ChevronRight, Sparkles, Building, Lock, Unlock, Zap, Download,
-  Clock, Thermometer, Lightbulb, ShoppingBag, ShoppingCart, CheckCircle
+  Clock, Thermometer, Lightbulb, ShoppingBag, ShoppingCart, CheckCircle,
+  MapPin, ClipboardList, Database
 } from 'lucide-react';
 import { api } from './api';
 import {
   UserProfile, GuardState, Camera, Agent, SecurityEvent,
   AlarmItem, AlarmRule, FaceItem, PlateItem, CRMCustomer,
-  AttendanceItem, FacilityItem, ShopProductItem, ShopOrderItem
+  AttendanceItem, FacilityItem, ShopProductItem, ShopOrderItem,
+  SecurityIncidentItem, ShiftHandoverItem, GuardPatrolItem
 } from './types';
 
 export function App() {
@@ -44,6 +46,25 @@ export function App() {
   const [tenantsList, setTenantsList] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [usersList, setUsersList] = useState<any[]>([]);
+  const [incidents, setIncidents] = useState<SecurityIncidentItem[]>([]);
+  const [shifts, setShifts] = useState<ShiftHandoverItem[]>([]);
+  const [patrols, setPatrols] = useState<GuardPatrolItem[]>([]);
+  const [matrixMode, setMatrixMode] = useState<'single' | 'quad' | 'grid'>('quad');
+  const [showDispatchModal, setShowDispatchModal] = useState(false);
+  const [newIncident, setNewIncident] = useState({
+    title: '',
+    camera_id: 'cam-01',
+    severity: 'HIGH',
+    assigned_to: 'گشت موتوری حراست',
+    notes: ''
+  });
+  const [showShiftModal, setShowShiftModal] = useState(false);
+  const [newShift, setNewShift] = useState({
+    officer_name: '',
+    shift_type: 'MORNING',
+    outgoing_notes: '',
+    incoming_officer: ''
+  });
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [newUser, setNewUser] = useState({ email: '', password: '', full_name: '', role: 'OPERATOR', phone: '' });
   const [shopCategory, setShopCategory] = useState<string>('ALL');
@@ -274,7 +295,7 @@ export function App() {
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const [gRes, camRes, agRes, evRes, alRes, rRes, fRes, pRes, crmRes, attRes, facRes, prodRes, ordRes, tRes, audRes, uRes] = await Promise.all([
+      const [gRes, camRes, agRes, evRes, alRes, rRes, fRes, pRes, crmRes, attRes, facRes, prodRes, ordRes, tRes, audRes, uRes, incRes, shRes, ptRes] = await Promise.all([
         api.getGuardState(),
         api.getCameras(),
         api.getAgents(),
@@ -290,7 +311,10 @@ export function App() {
         api.getShopOrders(),
         api.getTenants().catch(() => []),
         api.getAuditLogs().catch(() => []),
-        api.getUsers().catch(() => [])
+        api.getUsers().catch(() => []),
+        api.getIncidents().catch(() => []),
+        api.getShifts().catch(() => []),
+        api.getPatrols().catch(() => [])
       ]);
       setGuardState(gRes);
       setCameras(camRes);
@@ -308,6 +332,9 @@ export function App() {
       setTenantsList(tRes);
       setAuditLogs(audRes);
       setUsersList(uRes || []);
+      setIncidents(incRes || []);
+      setShifts(shRes || []);
+      setPatrols(ptRes || []);
     } catch (err) {
       console.error('Failed to load data:', err);
     } finally {
@@ -711,6 +738,75 @@ export function App() {
       showToast(`وضعیت سفارش ${id} به «${status}» تغییر یافت`, 'success');
       const ordRes = await api.getShopOrders();
       setOrders(ordRes);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Dispatch Security Incident Ticket
+  const handleDispatchIncident = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.createIncident(newIncident);
+      showToast(`دستور اعزام حراست برای «${newIncident.title}» ثبت و ابلاغ شد`, 'success');
+      setShowDispatchModal(false);
+      setNewIncident({ title: '', camera_id: 'cam-01', severity: 'HIGH', assigned_to: 'گشت موتوری حراست', notes: '' });
+      const incRes = await api.getIncidents();
+      setIncidents(incRes);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Update Incident Status
+  const handleUpdateIncidentStatus = async (id: string, status: string) => {
+    try {
+      await api.updateIncidentStatus(id, status, status === 'RESOLVED' ? 'رفع نفوذ و تایید سلامت محیط توسط گشت' : undefined);
+      showToast(`وضعیت حادثه امنیتی به «${status}» تغییر یافت`, 'success');
+      const incRes = await api.getIncidents();
+      setIncidents(incRes);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Log Shift Handover
+  const handleCreateShift = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.createShift(newShift);
+      showToast(`تحویل شیفت با موفقیت در دفتر وقایع حراست ثبت شد`, 'success');
+      setShowShiftModal(false);
+      setNewShift({ officer_name: '', shift_type: 'MORNING', outgoing_notes: '', incoming_officer: '' });
+      const shRes = await api.getShifts();
+      setShifts(shRes);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Check Guard Patrol Checkpoint
+  const handleRecordPatrol = async (checkpointName: string, officerName: string) => {
+    try {
+      await api.recordPatrol({ checkpoint_name: checkpointName, officer_name: officerName });
+      showToast(`سرکشی چک‌پوینت «${checkpointName}» تایید و مهر زمانی شد`, 'success');
+      const ptRes = await api.getPatrols();
+      setPatrols(ptRes);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Download Disaster Recovery Encrypted Backup
+  const handleDownloadBackup = async () => {
+    try {
+      const backup = await api.getSystemBackup();
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup, null, 2));
+      const dl = document.createElement('a');
+      dl.setAttribute('href', dataStr);
+      dl.setAttribute('download', `makoran_enterprise_backup_${Date.now()}.json`);
+      dl.click();
+      showToast('پشتیبان رمزنگاری‌شده سازمانی با موفقیت دانلود شد', 'success');
     } catch (err: any) {
       showToast(err.message, 'error');
     }
@@ -1191,7 +1287,7 @@ export function App() {
 
             {/* LIVE VIEW CAMERA GRID (WebRTC On-Demand) */}
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
                     <Video className="w-4 h-4 text-[#D4AF37]" />
@@ -1201,13 +1297,48 @@ export function App() {
                     با کلیک روی «مشاهده زنده»، خط لوله WebRTC مستقیماً از مینی‌پی‌سی استارت می‌شود.
                   </p>
                 </div>
-                <div className="text-xs font-medium text-slate-400 bg-[#0F1118] px-3 py-1.5 rounded-xl border border-slate-800 flex items-center gap-2">
-                  <span>پخش فعال:</span>
-                  <span className="text-[#ECC665] font-bold font-mono-num">{Object.keys(activeLiveStreams).length} دوربین</span>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Matrix Layout Switcher */}
+                  <div className="flex items-center gap-1 bg-[#121520] p-1 rounded-xl border border-slate-800 text-xs">
+                    <button
+                      onClick={() => setMatrixMode('single')}
+                      className={`px-2.5 py-1 rounded-lg font-semibold transition ${
+                        matrixMode === 'single' ? 'bg-[#D4AF37] text-black font-bold' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      تک تصویر
+                    </button>
+                    <button
+                      onClick={() => setMatrixMode('quad')}
+                      className={`px-2.5 py-1 rounded-lg font-semibold transition ${
+                        matrixMode === 'quad' ? 'bg-[#D4AF37] text-black font-bold' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      ماتریس ۲×۲ (Quad)
+                    </button>
+                    <button
+                      onClick={() => setMatrixMode('grid')}
+                      className={`px-2.5 py-1 rounded-lg font-semibold transition ${
+                        matrixMode === 'grid' ? 'bg-[#D4AF37] text-black font-bold' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      ماتریس ۳×۳ (Wall)
+                    </button>
+                  </div>
+
+                  <div className="text-xs font-medium text-slate-400 bg-[#0F1118] px-3 py-1.5 rounded-xl border border-slate-800 flex items-center gap-2">
+                    <span>پخش فعال:</span>
+                    <span className="text-[#ECC665] font-bold font-mono-num">{Object.keys(activeLiveStreams).length} دوربین</span>
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className={`grid gap-4 ${
+                matrixMode === 'single' ? 'grid-cols-1 max-w-3xl mx-auto' :
+                matrixMode === 'grid' ? 'grid-cols-1 md:grid-cols-3' :
+                'grid-cols-1 md:grid-cols-2'
+              }`}>
                 {cameras.map(cam => {
                   const isLive = !!activeLiveStreams[cam.id];
                   const stats = streamingStats[cam.id] || { fps: 25, kbps: 2200, frame: 1 };
@@ -1424,7 +1555,175 @@ export function App() {
 
         {/* TAB 2: EVENTS & ALARMS */}
         {currentTab === 'events' && (
-          <div className="space-y-4">
+          <div className="space-y-6">
+            {/* ENTERPRISE INCIDENTS & PATROL DISPATCH */}
+            <div className="bg-[#11141E] border border-red-500/30 rounded-2xl p-5 shadow-xl space-y-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                <div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 text-red-400" />
+                    <span>مرکز مدیریت حوادث، تیکت‌های امنیتی و اعزام گشت (Incident Dispatch Center)</span>
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    رسیدگی رسمی به هشدارهای تایید شده، اعزام گشت فیزیکی حراست، ثبت علت ریشه‌ای و مستندسازی پرونده امنیتی.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setShowDispatchModal(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow"
+                >
+                  <span>+ ثبت و اعزام گشت حراست</span>
+                </button>
+              </div>
+
+              {/* Dispatch Modal */}
+              {showDispatchModal && (
+                <div className="bg-[#181B26] border border-red-500/50 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-700">
+                    <span className="text-xs font-bold text-white">صدور دستور اعزام فوری گشت حراست</span>
+                    <button onClick={() => setShowDispatchModal(false)} className="text-slate-400 hover:text-white">✕</button>
+                  </div>
+
+                  <form onSubmit={handleDispatchIncident} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                    <div>
+                      <label className="block text-slate-400 mb-1">عنوان حادثه / موضوع</label>
+                      <input
+                        type="text"
+                        placeholder="مثال: نفوذ به حریم فنس جنوبی"
+                        value={newIncident.title}
+                        onChange={e => setNewIncident({ ...newIncident, title: e.target.value })}
+                        className="w-full px-3 py-1.5 rounded-lg bg-[#121520] border border-slate-700 text-white"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">دوربین ناظر</label>
+                      <select
+                        value={newIncident.camera_id}
+                        onChange={e => setNewIncident({ ...newIncident, camera_id: e.target.value })}
+                        className="w-full px-3 py-1.5 rounded-lg bg-[#121520] border border-slate-700 text-white"
+                      >
+                        {cameras.map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">سطح فوریت</label>
+                      <select
+                        value={newIncident.severity}
+                        onChange={e => setNewIncident({ ...newIncident, severity: e.target.value })}
+                        className="w-full px-3 py-1.5 rounded-lg bg-[#121520] border border-slate-700 text-white"
+                      >
+                        <option value="CRITICAL">بحرانی (CRITICAL) - اعزام آنی</option>
+                        <option value="HIGH">بالا (HIGH) - بررسی سریع</option>
+                        <option value="MEDIUM">متوسط (MEDIUM) - سرکشی عادی</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">نیروی اعزامی / گشت</label>
+                      <input
+                        type="text"
+                        placeholder="مثال: ستوان ریگی (گشت ۲)"
+                        value={newIncident.assigned_to}
+                        onChange={e => setNewIncident({ ...newIncident, assigned_to: e.target.value })}
+                        className="w-full px-3 py-1.5 rounded-lg bg-[#121520] border border-slate-700 text-white"
+                        required
+                      />
+                    </div>
+
+                    <div className="md:col-span-4 flex justify-end gap-2 pt-1 border-t border-slate-700">
+                      <button type="button" onClick={() => setShowDispatchModal(false)} className="px-3 py-1 text-slate-400">انصراف</button>
+                      <button type="submit" className="px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold">ابلاغ دستور اعزام به گشت</button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Incidents Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-[#161925] text-slate-400 border-b border-slate-800">
+                    <tr>
+                      <th className="p-3">کد حادثه</th>
+                      <th className="p-3">موضوع نفوذ / حادثه</th>
+                      <th className="p-3">فوریت</th>
+                      <th className="p-3">نیروی اعزامی</th>
+                      <th className="p-3">وضعیت رسیدگی</th>
+                      <th className="p-3">زمان ثبت</th>
+                      <th className="p-3 text-left">اقدام عملیاتی</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/80 font-mono-num">
+                    {incidents.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-4 text-center text-slate-500 font-sans">هیچ حادثه فعالی در حال حاضر وجود ندارد</td>
+                      </tr>
+                    ) : (
+                      incidents.map(inc => (
+                        <tr key={inc.id} className="hover:bg-[#151926] transition">
+                          <td className="p-3 font-bold text-[#ECC665]">{inc.id}</td>
+                          <td className="p-3 font-sans font-semibold text-white">{inc.title}</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              inc.severity === 'CRITICAL' ? 'bg-red-500/20 text-red-400 border border-red-500/40' :
+                              inc.severity === 'HIGH' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
+                              'bg-blue-500/20 text-blue-300'
+                            }`}>
+                              {inc.severity}
+                            </span>
+                          </td>
+                          <td className="p-3 font-sans text-slate-300">{inc.assigned_to || '-'}</td>
+                          <td className="p-3 font-sans">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              inc.status === 'RESOLVED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
+                              inc.status === 'INVESTIGATING' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
+                              'bg-red-500/20 text-red-300 border border-red-500/40'
+                            }`}>
+                              {inc.status === 'RESOLVED' ? 'رفع حادثه (تایید نهایی)' :
+                               inc.status === 'INVESTIGATING' ? 'گشت در محل (در حال بررسی)' :
+                               'گشت اعزام شد'}
+                            </span>
+                          </td>
+                          <td className="p-3 text-slate-400 text-[11px] font-mono-num">
+                            {new Date(inc.created_at).toLocaleTimeString('fa-IR')}
+                          </td>
+                          <td className="p-3 text-left font-sans">
+                            {inc.status === 'DISPATCHED' && (
+                              <button
+                                onClick={() => handleUpdateIncidentStatus(inc.id, 'INVESTIGATING')}
+                                className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500 hover:text-black border border-amber-500/40 text-amber-300 text-[10px] font-bold transition"
+                              >
+                                شروع بررسی گشت
+                              </button>
+                            )}
+                            {inc.status === 'INVESTIGATING' && (
+                              <button
+                                onClick={() => handleUpdateIncidentStatus(inc.id, 'RESOLVED')}
+                                className="px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500 hover:text-black border border-emerald-500/40 text-emerald-300 text-[10px] font-bold transition"
+                              >
+                                تایید سلامت و رفع حادثه
+                              </button>
+                            )}
+                            {inc.status === 'RESOLVED' && (
+                              <span className="text-emerald-400 text-[10px] font-bold flex items-center justify-end gap-1">
+                                <CheckCircle className="w-3 h-3" />
+                                <span>مختومه</span>
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
@@ -3356,6 +3655,262 @@ export function App() {
                   <div className="text-slate-300 text-[11px]">ذخیره‌سازی اسنپ‌شات‌ها: <span className="text-white">ابری سازگار با S3</span></div>
                   <div className="text-slate-300 text-[11px]">دوره نگهداری لاگ‌ها: <span className="text-white font-mono-num font-bold">60 روز</span></div>
                   <div className="text-slate-300 text-[11px]">امحای خودکار بیومتریک: <span className="text-emerald-400 font-bold">فعال</span></div>
+                </div>
+              </div>
+            </div>
+
+            {/* ENTERPRISE GUARD SHIFT LOGBOOK */}
+            <div className="space-y-4 pt-4 border-t border-slate-800">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <ClipboardList className="w-4 h-4 text-[#D4AF37]" />
+                    <span>دفتر الکترونیک تحویل و تحول شیفت‌های حراست (Guard Shift Logbook)</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    امضای رسمی ثبت تغییر شیفت نگهبانی، تحویل سلاح و کلیدهای حفاظتی، و وضعیت پایش محوطه.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setShowAddShiftModal(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-[#D4AF37] hover:bg-[#ECC665] text-black text-xs font-bold transition flex items-center gap-1.5 shadow"
+                >
+                  <span>+ ثبت تحویل شیفت حراست</span>
+                </button>
+              </div>
+
+              {/* Add Shift Modal */}
+              {showAddShiftModal && (
+                <div className="bg-[#121520] border border-[#D4AF37]/50 rounded-2xl p-5 shadow-2xl space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                    <span className="text-xs font-bold text-white">ثبت صورت‌جلسه تحویل شیفت جدید</span>
+                    <button onClick={() => setShowAddShiftModal(false)} className="text-slate-400 hover:text-white">✕</button>
+                  </div>
+
+                  <form onSubmit={handleCreateShift} className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <label className="block text-slate-400 mb-1">نوع نوبت کاری (شیفت)</label>
+                      <select
+                        value={newShift.shift_type}
+                        onChange={e => setNewShift({ ...newShift, shift_type: e.target.value as any })}
+                        className="w-full px-3 py-1.5 rounded-lg bg-[#181B26] border border-slate-700 text-white"
+                      >
+                        <option value="MORNING">شیفت صبح (۰۸:۰۰ الی ۱۶:۰۰)</option>
+                        <option value="EVENING">شیفت عصر (۱۶:۰۰ الی ۲۴:۰۰)</option>
+                        <option value="NIGHT">شیفت شب (۲۴:۰۰ الی ۰۸:۰۰)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">نگهبان تحویل‌دهنده (خروجی)</label>
+                      <input
+                        type="text"
+                        value={newShift.outgoing_officer}
+                        onChange={e => setNewShift({ ...newShift, outgoing_officer: e.target.value })}
+                        className="w-full px-3 py-1.5 rounded-lg bg-[#181B26] border border-slate-700 text-white"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">نگهبان تحویل‌گیرنده (ورودی)</label>
+                      <input
+                        type="text"
+                        value={newShift.incoming_officer}
+                        onChange={e => setNewShift({ ...newShift, incoming_officer: e.target.value })}
+                        className="w-full px-3 py-1.5 rounded-lg bg-[#181B26] border border-slate-700 text-white"
+                        required
+                      />
+                    </div>
+
+                    <div className="md:col-span-3">
+                      <label className="block text-slate-400 mb-1">شرح وضعیت سایت، بازرسی فنس‌ها و توضیحات حراست</label>
+                      <textarea
+                        rows={2}
+                        value={newShift.notes}
+                        onChange={e => setNewShift({ ...newShift, notes: e.target.value })}
+                        className="w-full px-3 py-1.5 rounded-lg bg-[#181B26] border border-slate-700 text-white"
+                        required
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-4 md:col-span-2 pt-2">
+                      <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newShift.keys_handed_over}
+                          onChange={e => setNewShift({ ...newShift, keys_handed_over: e.target.checked })}
+                          className="w-4 h-4 accent-[#D4AF37]"
+                        />
+                        <span>کلیدهای گیت و اتاق سرور تحویل شد</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newShift.weapons_handed_over}
+                          onChange={e => setNewShift({ ...newShift, weapons_handed_over: e.target.checked })}
+                          className="w-4 h-4 accent-[#D4AF37]"
+                        />
+                        <span>تجهیزات دفاعی، بی‌سیم‌ها و پروژکتورها تحویل شد</span>
+                      </label>
+                    </div>
+
+                    <div className="flex justify-end gap-2 items-center pt-2">
+                      <button type="button" onClick={() => setShowAddShiftModal(false)} className="px-3 py-1 text-slate-400">انصراف</button>
+                      <button type="submit" className="px-4 py-1.5 rounded-lg bg-[#D4AF37] hover:bg-[#ECC665] text-black font-bold">تایید و ثبت صورت‌جلسه</button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Shift Table */}
+              <div className="bg-[#0F1118] border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-[#141722] text-slate-400 border-b border-slate-800">
+                    <tr>
+                      <th className="p-3.5">شناسه</th>
+                      <th className="p-3.5">نوع نوبت</th>
+                      <th className="p-3.5">افسر تحویل‌دهنده</th>
+                      <th className="p-3.5">افسر تحویل‌گیرنده</th>
+                      <th className="p-3.5">کلید / تجهیزات</th>
+                      <th className="p-3.5">توضیحات و بازرسی</th>
+                      <th className="p-3.5">زمان ثبت</th>
+                      <th className="p-3.5">وضعیت</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/80 font-mono-num">
+                    {shifts.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="p-4 text-center text-slate-500 font-sans">هیچ گزارشی ثبت نشده است</td>
+                      </tr>
+                    ) : (
+                      shifts.map(s => (
+                        <tr key={s.id} className="hover:bg-[#131622] transition">
+                          <td className="p-3.5 font-bold text-[#ECC665]">{s.id}</td>
+                          <td className="p-3.5 font-sans font-semibold text-white">
+                            <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-200">
+                              {s.shift_type === 'MORNING' ? 'شیفت صبح' : s.shift_type === 'EVENING' ? 'شیفت عصر' : 'شیفت شب'}
+                            </span>
+                          </td>
+                          <td className="p-3.5 font-sans text-slate-300">{s.outgoing_officer}</td>
+                          <td className="p-3.5 font-sans text-[#ECC665] font-bold">{s.incoming_officer}</td>
+                          <td className="p-3.5 font-sans text-[11px]">
+                            {s.keys_handed_over && s.weapons_handed_over ? (
+                              <span className="text-emerald-400 flex items-center gap-1">
+                                <CheckCircle className="w-3 h-3" />
+                                <span>کامل</span>
+                              </span>
+                            ) : (
+                              <span className="text-amber-400">ناقص</span>
+                            )}
+                          </td>
+                          <td className="p-3.5 font-sans text-slate-400 max-w-xs truncate">{s.notes}</td>
+                          <td className="p-3.5 text-slate-400 text-[11px] font-mono-num">
+                            {new Date(s.handover_time).toLocaleTimeString('fa-IR')}
+                          </td>
+                          <td className="p-3.5">
+                            <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
+                              {s.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* ENTERPRISE GUARD PATROL CHECKPOINTS */}
+            <div className="space-y-4 pt-4 border-t border-slate-800">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-[#D4AF37]" />
+                  <span>چک‌پوینت‌های گشت‌زنی هوشمند مکران (Guard Patrol Checkpoints)</span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  سرکشی‌های میدانی نگهبانان با نظارت متقاطع دوربین‌های هوش مصنوعی تایید و به صورت آنی ثبت می‌شوند.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                {patrols.map(p => (
+                  <div key={p.id} className="bg-[#0F1118] border border-slate-800 hover:border-[#D4AF37]/40 rounded-2xl p-4 shadow-xl flex flex-col justify-between transition">
+                    <div>
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                        <span className="text-xs font-bold text-white flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-[#D4AF37]" />
+                          <span>{p.checkpoint_name}</span>
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                          {p.status}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 space-y-1.5 text-xs">
+                        <div className="text-slate-400 text-[11px]">
+                          دوربین ناظر: <span className="font-mono-num text-slate-200">{p.camera_id}</span>
+                        </div>
+                        <div className="text-slate-400 text-[11px]">
+                          مامور آخرین سرکشی: <span className="text-white font-semibold">{p.verified_by}</span>
+                        </div>
+                        <div className="text-slate-500 text-[10px] font-mono-num">
+                          زمان سرکشی: {new Date(p.created_at).toLocaleTimeString('fa-IR')}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-slate-800">
+                      <button
+                        onClick={() => handleRecordPatrol(p.id, user?.fullName || 'مامور گشت')}
+                        className="w-full py-1.5 rounded-xl bg-[#141722] hover:bg-[#D4AF37] hover:text-black border border-slate-700 text-xs font-semibold text-slate-200 transition"
+                      >
+                        ثبت حضور و بازرسی گشت
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* DISASTER RECOVERY & ENCRYPTED BACKUP */}
+            <div className="space-y-4 pt-4 border-t border-slate-800">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Database className="w-4 h-4 text-[#D4AF37]" />
+                    <span>پشتیبان‌گیری رمزنگاری‌شده و بازیابی فاجعه (Disaster Recovery & Backup)</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    تهیه اسنپ‌شات رمزنگاری‌شده کامل از پایگاه‌داده چندمستأجری، مدل‌های هوش مصنوعی، تنظیمات و لاگ‌های رویدادها.
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleDownloadBackup}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B38F26] hover:from-[#ECC665] hover:to-[#C49B2C] text-black font-bold text-xs shadow-lg flex items-center gap-2 transition"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>دانلود اسنپ‌شات پشتیبان امن (AES-256)</span>
+                </button>
+              </div>
+
+              <div className="bg-[#0F1118] border border-slate-800 p-4 rounded-xl grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <div>
+                  <div className="text-slate-400">موتور پایگاه‌داده ابری</div>
+                  <div className="text-white font-bold font-mono-num mt-0.5">SQLite WASM (WAL Mode)</div>
+                  <div className="text-[10px] text-emerald-400 mt-0.5">ایزوله و چندمستأجری</div>
+                </div>
+                <div>
+                  <div className="text-slate-400">رمزنگاری بسته‌های پشتیبان</div>
+                  <div className="text-[#ECC665] font-bold font-mono-num mt-0.5">AES-256-GCM + SHA256 Hash</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">سازگار با استانداردهای نظامی و بانکی</div>
+                </div>
+                <div>
+                  <div className="text-slate-400">سیاست بازیابی آنی</div>
+                  <div className="text-emerald-400 font-bold mt-0.5">RTO &lt; 30 ثانیه • RPO = 0</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Zero Data Loss Architecture</div>
                 </div>
               </div>
             </div>

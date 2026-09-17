@@ -351,6 +351,54 @@ export class ApiClient {
     return this.request('/settings');
   }
 
+  // Enterprise Security Incidents & Patrol Dispatch
+  async getIncidents() {
+    return this.request('/incidents');
+  }
+
+  async createIncident(incident: any) {
+    return this.request('/incidents', {
+      method: 'POST',
+      body: JSON.stringify(incident)
+    });
+  }
+
+  async updateIncidentStatus(id: string, status: string, root_cause?: string, notes?: string) {
+    return this.request(`/incidents/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, root_cause, notes })
+    });
+  }
+
+  // Enterprise Shift Handovers & Guard Logbook
+  async getShifts() {
+    return this.request('/shifts');
+  }
+
+  async createShift(shift: any) {
+    return this.request('/shifts', {
+      method: 'POST',
+      body: JSON.stringify(shift)
+    });
+  }
+
+  // Enterprise Guard Patrol Checkpoints
+  async getPatrols() {
+    return this.request('/patrols');
+  }
+
+  async recordPatrol(patrol: any) {
+    return this.request('/patrols/check', {
+      method: 'POST',
+      body: JSON.stringify(patrol)
+    });
+  }
+
+  // Disaster Recovery Encrypted Backup
+  async getSystemBackup() {
+    return this.request('/system/backup');
+  }
+
   // Billing & CRM
   async getBilling() {
     return this.request('/billing');

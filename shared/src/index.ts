@@ -74,6 +74,8 @@ export type AgentCommandType =
   | 'siren_pulse' 
   | 'buzzer_beep' 
   | 'capture_snapshot' 
+  | 'discover_cameras'
+  | 'ptz_command'
   | 'reboot' 
   | 'update_config' 
   | 'webrtc_start' 
@@ -169,6 +171,7 @@ export interface ShopOrder {
   created_at: string;
 }
 
+export interface NotificationPayload {
   tenant_id: string;
   event_id: string;
   title: string;
@@ -204,4 +207,44 @@ export interface SecurityRule {
     send_phone_call: boolean;
     webhook_url?: string;
   };
+}
+
+// Enterprise Security Incident Dispatch
+export interface SecurityIncident {
+  id: string;
+  tenant_id: string;
+  title: string;
+  event_id?: string;
+  camera_id?: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  status: 'OPEN' | 'DISPATCHED' | 'INVESTIGATING' | 'RESOLVED';
+  assigned_to?: string;
+  notes?: string;
+  root_cause?: string;
+  resolved_at?: string;
+  created_at: string;
+}
+
+// Enterprise Shift Handover & Logbook
+export interface ShiftHandover {
+  id: string;
+  tenant_id: string;
+  officer_name: string;
+  shift_type: 'MORNING' | 'EVENING' | 'NIGHT';
+  outgoing_notes?: string;
+  incoming_officer?: string;
+  status: 'PENDING' | 'CONFIRMED';
+  created_at: string;
+}
+
+// Enterprise Guard Patrol Checkpoint
+export interface GuardPatrol {
+  id: string;
+  tenant_id: string;
+  checkpoint_name: string;
+  officer_name: string;
+  status: 'VERIFIED' | 'DELAYED' | 'MISSED';
+  camera_id?: string;
+  notes?: string;
+  checked_at: string;
 }

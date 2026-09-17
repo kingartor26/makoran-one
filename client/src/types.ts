@@ -156,6 +156,7 @@ export interface ShopOrderItem {
   created_at: string;
 }
 
+export interface CRMCustomer {
   id: string;
   name: string;
   company: string;
@@ -165,4 +166,38 @@ export interface ShopOrderItem {
   site_address: string;
   status: string;
   devices_installed: number;
+}
+
+export interface SecurityIncidentItem {
+  id: string;
+  title: string;
+  event_id?: string;
+  camera_id?: string;
+  severity: string;
+  status: string;
+  assigned_to?: string;
+  notes?: string;
+  root_cause?: string;
+  resolved_at?: string;
+  created_at: string;
+}
+
+export interface ShiftHandoverItem {
+  id: string;
+  officer_name: string;
+  shift_type: string;
+  outgoing_notes?: string;
+  incoming_officer?: string;
+  status: string;
+  created_at: string;
+}
+
+export interface GuardPatrolItem {
+  id: string;
+  checkpoint_name: string;
+  officer_name: string;
+  status: string;
+  camera_id?: string;
+  notes?: string;
+  checked_at: string;
 }

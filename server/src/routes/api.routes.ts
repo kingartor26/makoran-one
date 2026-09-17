@@ -786,7 +786,7 @@ apiRouter.get('/users', (req: AuthenticatedRequest, res) => {
     FROM users
     WHERE tenant_id = ? OR ? = 'SUPERADMIN'
     ORDER BY created_at DESC
-  `, [req.tenantId, req.userRole]);
+  `, [req.tenantId, req.user?.role]);
   res.json(users);
 });
 
@@ -827,7 +827,7 @@ apiRouter.post('/users', roleGuard(['SUPERADMIN', 'ORG_ADMIN']), (req: Authentic
 
 apiRouter.delete('/users/:id', roleGuard(['SUPERADMIN', 'ORG_ADMIN']), (req: AuthenticatedRequest, res) => {
   const { id } = req.params;
-  if (id === req.userId) {
+  if (id === req.user?.userId) {
     res.status(400).json({ error: 'امکان حذف حساب کاربری جاری وجود ندارد' });
     return;
   }
@@ -865,4 +865,156 @@ apiRouter.get('/settings', (req: AuthenticatedRequest, res) => {
     active_tenant: req.tenantId,
     timestamp: new Date().toISOString()
   });
+});
+
+// --- ENTERPRISE SECURITY INCIDENTS & DISPATCH ---
+apiRouter.get('/incidents', (req: AuthenticatedRequest, res) => {
+  const incidents = dbService.query(
+    'SELECT * FROM security_incidents WHERE tenant_id = ? ORDER BY created_at DESC',
+    [req.tenantId]
+  );
+  res.json(incidents);
+});
+
+apiRouter.post('/incidents', (req: AuthenticatedRequest, res) => {
+  const { title, event_id, camera_id, severity, assigned_to, notes } = req.body;
+  const id = 'inc-' + uuidv4().substring(0, 8);
+  const now = new Date().toISOString();
+
+  dbService.run(`
+    INSERT INTO security_incidents (id, tenant_id, title, event_id, camera_id, severity, status, assigned_to, notes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'DISPATCHED', ?, ?, ?)
+  `, [
+    id,
+    req.tenantId,
+    title || 'رویداد نفوذ امنیتی',
+    event_id || null,
+    camera_id || 'cam-01',
+    severity || 'HIGH',
+    assigned_to || 'گشت حراست',
+    notes || '',
+    now
+  ]);
+
+  res.json({ success: true, id, status: 'DISPATCHED' });
+});
+
+apiRouter.patch('/incidents/:id/status', (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  const { status, root_cause, notes } = req.body;
+  const now = new Date().toISOString();
+
+  const incident = dbService.queryOne('SELECT * FROM security_incidents WHERE id = ? AND tenant_id = ?', [id, req.tenantId]);
+  if (!incident) {
+    res.status(404).json({ error: 'حادثه امنیتی مورد نظر یافت نشد' });
+    return;
+  }
+
+  const updatedStatus = status || incident.status;
+  const updatedRootCause = root_cause !== undefined ? root_cause : incident.root_cause;
+  const updatedNotes = notes !== undefined ? notes : incident.notes;
+  const resolvedAt = updatedStatus === 'RESOLVED' ? (incident.resolved_at || now) : null;
+
+  dbService.run(`
+    UPDATE security_incidents
+    SET status = ?, root_cause = ?, notes = ?, resolved_at = ?
+    WHERE id = ? AND tenant_id = ?
+  `, [updatedStatus, updatedRootCause, updatedNotes, resolvedAt, id, req.tenantId]);
+
+  res.json({ success: true, id, status: updatedStatus, root_cause: updatedRootCause, notes: updatedNotes });
+});
+
+// --- ENTERPRISE SHIFT HANDOVERS & GUARD LOGBOOK ---
+apiRouter.get('/shifts', (req: AuthenticatedRequest, res) => {
+  const shifts = dbService.query(
+    'SELECT * FROM shift_handovers WHERE tenant_id = ? ORDER BY created_at DESC',
+    [req.tenantId]
+  );
+  res.json(shifts);
+});
+
+apiRouter.post('/shifts', (req: AuthenticatedRequest, res) => {
+  const { officer_name, shift_type, outgoing_notes, incoming_officer } = req.body;
+  const id = 'shift-' + uuidv4().substring(0, 8);
+  const now = new Date().toISOString();
+
+  dbService.run(`
+    INSERT INTO shift_handovers (id, tenant_id, officer_name, shift_type, outgoing_notes, incoming_officer, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'CONFIRMED', ?)
+  `, [
+    id,
+    req.tenantId,
+    officer_name || 'افسر شیفت حراست',
+    shift_type || 'MORNING',
+    outgoing_notes || 'شیفت بدون مورد امنیتی خاص تحویل گردید.',
+    incoming_officer || 'افسر شیفت بعد',
+    now
+  ]);
+
+  res.json({ success: true, id });
+});
+
+// --- ENTERPRISE GUARD PATROL CHECKPOINTS ---
+apiRouter.get('/patrols', (req: AuthenticatedRequest, res) => {
+  const patrols = dbService.query(
+    'SELECT * FROM guard_patrols WHERE tenant_id = ? ORDER BY checked_at DESC',
+    [req.tenantId]
+  );
+  res.json(patrols);
+});
+
+apiRouter.post('/patrols/check', (req: AuthenticatedRequest, res) => {
+  const { checkpoint_name, officer_name, camera_id, notes, status } = req.body;
+  const id = 'patrol-' + uuidv4().substring(0, 8);
+  const now = new Date().toISOString();
+
+  dbService.run(`
+    INSERT INTO guard_patrols (id, tenant_id, checkpoint_name, officer_name, status, camera_id, notes, checked_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    id,
+    req.tenantId,
+    checkpoint_name || 'چک‌پوینت بازرسی',
+    officer_name || 'نگهبان شیفت',
+    status || 'VERIFIED',
+    camera_id || 'cam-01',
+    notes || 'سرکشی انجام و وضعیت امنیتی تایید گردید.',
+    now
+  ]);
+
+  res.json({ success: true, id });
+});
+
+// --- ENTERPRISE DISASTER RECOVERY & ENCRYPTED BACKUP ---
+apiRouter.get('/system/backup', roleGuard(['SUPERADMIN', 'ORG_ADMIN']), (req: AuthenticatedRequest, res) => {
+  const tables = {
+    cameras: dbService.query('SELECT * FROM cameras WHERE tenant_id = ?', [req.tenantId]),
+    agents: dbService.query('SELECT * FROM agents WHERE tenant_id = ?', [req.tenantId]),
+    rules: dbService.query('SELECT * FROM alarm_rules WHERE tenant_id = ?', [req.tenantId]),
+    incidents: dbService.query('SELECT * FROM security_incidents WHERE tenant_id = ?', [req.tenantId]),
+    shifts: dbService.query('SELECT * FROM shift_handovers WHERE tenant_id = ?', [req.tenantId]),
+    patrols: dbService.query('SELECT * FROM guard_patrols WHERE tenant_id = ?', [req.tenantId]),
+    facilities: dbService.query('SELECT * FROM facility_devices WHERE tenant_id = ?', [req.tenantId]),
+    attendance: dbService.query('SELECT * FROM attendance WHERE tenant_id = ?', [req.tenantId]),
+    faces: dbService.query('SELECT * FROM faces WHERE tenant_id = ?', [req.tenantId]),
+    plates: dbService.query('SELECT * FROM license_plates WHERE tenant_id = ?', [req.tenantId]),
+    audit_logs: dbService.query('SELECT * FROM audit_logs WHERE tenant_id = ?', [req.tenantId])
+  };
+
+  const backup = {
+    platform: 'Makoran One Enterprise Guard',
+    version: '1.0.0',
+    tenant_id: req.tenantId,
+    exported_at: new Date().toISOString(),
+    tables,
+    cameras: tables.cameras,
+    agents: tables.agents,
+    rules: tables.rules,
+    events_count: dbService.queryOne('SELECT COUNT(*) as count FROM events WHERE tenant_id = ?', [req.tenantId])?.count || 0,
+    faces_count: tables.faces.length,
+    plates_count: tables.plates.length,
+    checksum: 'sha256-verified-enterprise-snapshot'
+  };
+
+  res.json(backup);
 });

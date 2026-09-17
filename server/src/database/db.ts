@@ -49,14 +49,16 @@ export class DatabaseService {
 
   public run(sql: string, params: any[] = []): void {
     if (!this.db) throw new Error('Database not initialized');
-    this.db.run(sql, params);
+    const sanitized = params.map(p => (p === undefined ? null : p));
+    this.db.run(sql, sanitized);
     this.schedulePersist();
   }
 
   public query<T = any>(sql: string, params: any[] = []): T[] {
     if (!this.db) throw new Error('Database not initialized');
+    const sanitized = params.map(p => (p === undefined ? null : p));
     const stmt = this.db.prepare(sql);
-    stmt.bind(params);
+    stmt.bind(sanitized);
     const results: T[] = [];
     while (stmt.step()) {
       results.push(stmt.getAsObject() as T);
@@ -371,6 +373,49 @@ export class DatabaseService {
         created_at TEXT NOT NULL,
         FOREIGN KEY (tenant_id) REFERENCES tenants(id)
       );
+
+      -- Enterprise Security Incidents & Patrol Dispatch
+      CREATE TABLE IF NOT EXISTS security_incidents (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        event_id TEXT,
+        camera_id TEXT,
+        severity TEXT DEFAULT 'HIGH',
+        status TEXT DEFAULT 'DISPATCHED',
+        assigned_to TEXT,
+        notes TEXT,
+        root_cause TEXT,
+        resolved_at TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+      );
+
+      -- Enterprise Guard Shift Handovers
+      CREATE TABLE IF NOT EXISTS shift_handovers (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        officer_name TEXT NOT NULL,
+        shift_type TEXT NOT NULL,
+        outgoing_notes TEXT,
+        incoming_officer TEXT,
+        status TEXT DEFAULT 'CONFIRMED',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+      );
+
+      -- Enterprise Guard Patrol Checkpoints
+      CREATE TABLE IF NOT EXISTS guard_patrols (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        checkpoint_name TEXT NOT NULL,
+        officer_name TEXT NOT NULL,
+        status TEXT DEFAULT 'VERIFIED',
+        camera_id TEXT,
+        notes TEXT,
+        checked_at TEXT NOT NULL,
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+      );
     `);
   }
 
@@ -635,6 +680,78 @@ export class DatabaseService {
           INSERT INTO ecommerce_products (id, name, description, category, price, stock, image_url, sku, specifications, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [...p, now]);
+      }
+    }
+
+    // 15. Enterprise Security Incidents & Patrol Dispatch
+    if (!this.queryOne('SELECT id FROM security_incidents LIMIT 1')) {
+      this.run(`
+        INSERT INTO security_incidents (id, tenant_id, title, event_id, camera_id, severity, status, assigned_to, notes, root_cause, resolved_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        'inc-01',
+        'tenant-makoran-01',
+        'نفوذ مشکوک به حریم دیوار پیرامونی شرقی',
+        'evt-01',
+        'cam-02',
+        'HIGH',
+        'DISPATCHED',
+        'ستوان یکم قاسم بلوچ (گشت موتوری شماره ۲)',
+        'تیم حراست فیزیکی به موقعیت دیوار شرقی اعزام شد. فرد متواری گردید.',
+        'نقض حریم فنس پیرامونی خارج از ساعات اداری',
+        null,
+        now
+      ]);
+
+      this.run(`
+        INSERT INTO security_incidents (id, tenant_id, title, event_id, camera_id, severity, status, assigned_to, notes, root_cause, resolved_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        'inc-02',
+        'tenant-makoran-01',
+        'تلاش برای ورود با خودروی پلاک توقیفی به گیت مرکزی',
+        'evt-02',
+        'cam-03',
+        'CRITICAL',
+        'RESOLVED',
+        'افسر نگهبان دژبانی - سرگرد درزاده',
+        'خودرو در ورودی متوقف و تحویل عوامل انتظامی منطقه شد.',
+        'پلاک مسدود در سامانه LPR حراست',
+        now,
+        now
+      ]);
+    }
+
+    // 16. Enterprise Shift Handovers & Guard Logbook
+    if (!this.queryOne('SELECT id FROM shift_handovers LIMIT 1')) {
+      this.run(`
+        INSERT INTO shift_handovers (id, tenant_id, officer_name, shift_type, outgoing_notes, incoming_officer, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'CONFIRMED', ?)
+      `, [
+        'shift-01',
+        'tenant-makoran-01',
+        'افسر شیفت صبح: سرگرد عبدالستار ریگی',
+        'MORNING',
+        'کلیه ۳۲ دوربین آنلاین، تردد پرسنل اداری تکمیل شد، تست رله‌های آژیر در ساعت ۱۰:۰۰ موفقیت‌آمیز بود.',
+        'سرگرد پرویز درزاده (شیفت عصر)',
+        now
+      ]);
+    }
+
+    // 17. Enterprise Guard Patrol Checkpoints
+    if (!this.queryOne('SELECT id FROM guard_patrols LIMIT 1')) {
+      const patrols = [
+        ['patrol-01', 'tenant-makoran-01', 'چک‌پوینت شماره ۱ (گیت ورودی اصلی)', 'نگهبان قنبرزهی', 'VERIFIED', 'cam-01', 'وضعیت عادی و روشنایی کامل'],
+        ['patrol-02', 'tenant-makoran-01', 'چک‌پوینت شماره ۲ (برجک دیده‌بانی دیوار شرقی)', 'نگهبان میربلوچ', 'VERIFIED', 'cam-02', 'حریم فنس کاملاً سالم و بدون آسیب'],
+        ['patrol-03', 'tenant-makoran-01', 'چک‌پوینت شماره ۳ (محوطه مخازن و انبار)', 'نگهبان دهواری', 'VERIFIED', 'cam-04', 'پلمپ درب‌های انبار تایید شد'],
+        ['patrol-04', 'tenant-makoran-01', 'چک‌پوینت شماره ۴ (گیت تردد کانتینرها)', 'نگهبان جدگال', 'VERIFIED', 'cam-03', 'سیستم پلاک‌خوان فعال است']
+      ];
+
+      for (const pt of patrols) {
+        this.run(`
+          INSERT INTO guard_patrols (id, tenant_id, checkpoint_name, officer_name, status, camera_id, notes, checked_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [...pt, now]);
       }
     }
 
