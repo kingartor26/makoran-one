@@ -170,8 +170,29 @@ async function runEnterpriseScaleTests() {
     process.exit(1);
   }
 
+  // 8. Two-Way Audio & Voice Warning PA Broadcast
+  try {
+    const broadcastRes = await fetch(`${BASE_URL}/agents/agent-mini-01/broadcast`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        message: 'هشدار امنیتی سیستم مکران گارد: ورود غیرمجاز تشخیص داده شد.',
+        zone: 'entrance',
+        volume: 90
+      })
+    });
+    const broadcastData = await broadcastRes.json();
+    if (!broadcastData.success) {
+      throw new Error('Failed to dispatch voice broadcast command: ' + JSON.stringify(broadcastData));
+    }
+    console.log(`✓ Stage 8: Live Voice Deterrence Warning broadcasted to Mini PC speaker: "${broadcastData.message}"`);
+  } catch (err) {
+    console.error('✗ Stage 8 failed:', err);
+    process.exit(1);
+  }
+
   console.log('\n===========================================================');
-  console.log(' ALL 7 ENTERPRISE INTEGRATION STAGES PASSED SUCCESSFULLY!');
+  console.log(' ALL 8 ENTERPRISE INTEGRATION STAGES PASSED SUCCESSFULLY!');
   console.log('===========================================================');
 }
 

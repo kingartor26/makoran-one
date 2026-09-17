@@ -36,6 +36,14 @@ export class CommandExecutor {
         return { success: true, result: `Siren pulsing for ${durationSec}s` };
       }
 
+      case 'voice_broadcast': {
+        const message = cmd.parameters?.message || 'هشدار امنیتی مکران گارد';
+        const speakerZone = cmd.parameters?.zone || 'all';
+        const volume = cmd.parameters?.volume || 85;
+        console.log(`[Audio PA] 🔊 BROADCASTING LIVE VOICE WARNING on Zone [${speakerZone}] (Volume: ${volume}%): "${message}"`);
+        return { success: true, result: `Broadcasted on zone ${speakerZone}: "${message}"` };
+      }
+
       case 'buzzer_beep': {
         console.log(`[Hardware] 📢 Gateway Mini PC internal buzzer beeped`);
         return { success: true, result: 'Buzzer beep executed' };

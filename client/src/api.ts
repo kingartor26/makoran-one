@@ -136,6 +136,13 @@ export class ApiClient {
     });
   }
 
+  async broadcastVoice(agentId: string, message: string, zone = 'all', volume = 85) {
+    return this.request(`/agents/${agentId}/broadcast`, {
+      method: 'POST',
+      body: JSON.stringify({ message, zone, volume })
+    });
+  }
+
   // Cameras
   async getCameras() {
     return this.request('/cameras');

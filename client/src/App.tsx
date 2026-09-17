@@ -7,7 +7,7 @@ import {
   Camera as CamIcon, Terminal, ExternalLink, Settings, Layers,
   ChevronRight, Sparkles, Building, Lock, Unlock, Zap, Download,
   Clock, Thermometer, Lightbulb, ShoppingBag, ShoppingCart, CheckCircle,
-  MapPin, ClipboardList, Database
+  MapPin, ClipboardList, Database, Map, BarChart3, Volume2, Megaphone
 } from 'lucide-react';
 import { api } from './api';
 import {
@@ -50,6 +50,11 @@ export function App() {
   const [shifts, setShifts] = useState<ShiftHandoverItem[]>([]);
   const [patrols, setPatrols] = useState<GuardPatrolItem[]>([]);
   const [matrixMode, setMatrixMode] = useState<'single' | 'quad' | 'grid'>('quad');
+  const [monitorSubView, setMonitorSubView] = useState<'matrix' | 'floorplan' | 'analytics'>('matrix');
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
+  const [voiceMessageText, setVoiceMessageText] = useState('هشدار امنیتی سیستم مکران گارد: ورود غیرمجاز تشخیص داده شد. فوراً محوطه را ترک فرمایید.');
+  const [voiceZone, setVoiceZone] = useState('all');
+  const [selectedFloorplanCam, setSelectedFloorplanCam] = useState<Camera | null>(null);
   const [showDispatchModal, setShowDispatchModal] = useState(false);
   const [newIncident, setNewIncident] = useState({
     title: '',
@@ -812,6 +817,19 @@ export function App() {
     }
   };
 
+  // Broadcast Voice Warning to Mini PC Agent Speaker
+  const handleBroadcastVoice = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    try {
+      const targetAgentId = primaryAgent?.id || 'agent-mini-01';
+      await api.broadcastVoice(targetAgentId, voiceMessageText, voiceZone);
+      showToast(`پیام صوتی اضطراری به بلندگوی زون [${voiceZone}] ارسال شد`, 'success');
+      setShowVoiceModal(false);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
   // Search Face Sightings
   const handleSearchFace = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1285,7 +1303,59 @@ export function App() {
               </div>
             </div>
 
+            {/* SUB-VIEW SELECTOR: Matrix, Tactical Floorplan, Analytics */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#11141F] p-2.5 rounded-2xl border border-slate-800 shadow-lg">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                <button
+                  onClick={() => setMonitorSubView('matrix')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${
+                    monitorSubView === 'matrix'
+                      ? 'bg-[#D4AF37] text-black shadow-lg shadow-[#D4AF37]/20'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <Video className="w-4 h-4" />
+                  <span>ماتریس نظارت تصویری</span>
+                </button>
+
+                <button
+                  onClick={() => setMonitorSubView('floorplan')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${
+                    monitorSubView === 'floorplan'
+                      ? 'bg-[#D4AF37] text-black shadow-lg shadow-[#D4AF37]/20'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <Map className="w-4 h-4" />
+                  <span>پلان تاکتیکی سایت و نقشه زون‌ها</span>
+                </button>
+
+                <button
+                  onClick={() => setMonitorSubView('analytics')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${
+                    monitorSubView === 'analytics'
+                      ? 'bg-[#D4AF37] text-black shadow-lg shadow-[#D4AF37]/20'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <BarChart3 className="w-4 h-4" />
+                  <span>داشبورد تحلیلی و ترافیک تهدیدات</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowVoiceModal(true)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500 hover:text-black border border-amber-500/40 text-amber-300 transition flex items-center gap-1.5 shadow whitespace-nowrap"
+                >
+                  <Megaphone className="w-4 h-4" />
+                  <span>پیجینگ و هشدار صوتی سایت</span>
+                </button>
+              </div>
+            </div>
+
             {/* LIVE VIEW CAMERA GRID (WebRTC On-Demand) */}
+            {monitorSubView === 'matrix' && (
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
@@ -1460,6 +1530,388 @@ export function App() {
                 })}
               </div>
             </div>
+            )}
+
+            {/* SUBVIEW 2: INTERACTIVE 2D TACTICAL SITE FLOORPLAN */}
+            {monitorSubView === 'floorplan' && (
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <Map className="w-4 h-4 text-[#D4AF37]" />
+                      <span>پلان مهندسی و نقشه تاکتیکی سایت مکران (Tactical Blueprint & FOV Radar)</span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      موقعیت مکانی سنسورها، مخروط پوشش دید دوربین‌ها (FOV)، رله‌های کنترلی و وضعیت ایستگاه‌های گشت حراست.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="flex items-center gap-1 text-emerald-400">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                      <span>دوربین آنلاین</span>
+                    </span>
+                    <span className="flex items-center gap-1 text-[#D4AF37] mr-2">
+                      <span className="w-2 h-2 rounded-full bg-[#D4AF37]"></span>
+                      <span>ایستگاه گشت</span>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  {/* Tactical Map Canvas */}
+                  <div className="lg:col-span-2 bg-[#0A0C12] border border-slate-800 rounded-2xl p-4 relative overflow-hidden shadow-2xl flex flex-col items-center justify-center">
+                    {/* SVG Blueprint */}
+                    <svg viewBox="0 0 900 520" className="w-full h-auto select-none font-sans">
+                      <defs>
+                        {/* Radar Cones Gradients */}
+                        <radialGradient id="camFov" cx="0%" cy="0%" r="100%">
+                          <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.45" />
+                          <stop offset="100%" stopColor="#D4AF37" stopOpacity="0.0" />
+                        </radialGradient>
+                        <radialGradient id="alarmFov" cx="0%" cy="0%" r="100%">
+                          <stop offset="0%" stopColor="#EF4444" stopOpacity="0.65" />
+                          <stop offset="100%" stopColor="#EF4444" stopOpacity="0.0" />
+                        </radialGradient>
+                        <pattern id="gridPattern" width="30" height="30" patternUnits="userSpaceOnUse">
+                          <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#171C2B" strokeWidth="0.8" />
+                        </pattern>
+                      </defs>
+
+                      {/* Tactical Grid Background */}
+                      <rect width="900" height="520" fill="url(#gridPattern)" />
+
+                      {/* Perimeter Fence Line */}
+                      <rect x="30" y="30" width="840" height="460" rx="14" fill="#0C0F17" stroke="#252D42" strokeWidth="2.5" strokeDasharray="8 4" />
+                      <text x="50" y="55" fill="#475569" fontSize="12" fontWeight="bold">PERIMETER SECURITY FENCE • MAKORAN INDUSTRIAL SITE</text>
+
+                      {/* Zone 1: Main Entrance & Gate */}
+                      <rect x="50" y="200" width="220" height="270" rx="8" fill="#111624" stroke="#2C354D" strokeWidth="1.5" />
+                      <text x="65" y="225" fill="#ECC665" fontSize="11" fontWeight="bold">زون ۱: گیت اصلی و تردد خودروها</text>
+                      <text x="65" y="240" fill="#64748B" fontSize="9">Main Entrance & Vehicle Lanes</text>
+
+                      {/* Zone 2: Process Tanks & Refinery */}
+                      <rect x="300" y="50" width="280" height="150" rx="8" fill="#111624" stroke="#2C354D" strokeWidth="1.5" />
+                      <text x="315" y="75" fill="#38BDF8" fontSize="11" fontWeight="bold">زون ۴: مخازن و تاسیسات فرآیندی پتروشیمی</text>
+                      <circle cx="370" cy="130" r="30" fill="#182033" stroke="#38BDF8" strokeWidth="1" strokeDasharray="4 2" />
+                      <circle cx="450" cy="130" r="30" fill="#182033" stroke="#38BDF8" strokeWidth="1" strokeDasharray="4 2" />
+                      <circle cx="530" cy="130" r="30" fill="#182033" stroke="#38BDF8" strokeWidth="1" strokeDasharray="4 2" />
+
+                      {/* Zone 3: Secure Vault & Server Room */}
+                      <rect x="310" y="230" width="260" height="240" rx="8" fill="#111624" stroke="#D4AF37" strokeWidth="1.5" />
+                      <text x="325" y="255" fill="#D4AF37" fontSize="11" fontWeight="bold">زون ۳: اتاق سرور و خزانه‌داری مرکزی (Vault)</text>
+                      <rect x="340" y="280" width="200" height="170" rx="4" fill="#0E121D" stroke="#334155" strokeWidth="1" />
+                      <text x="360" y="370" fill="#475569" fontSize="10">CENTRAL SERVER CLUSTER</text>
+
+                      {/* Zone 4: East Perimeter & Warehouse Yards */}
+                      <rect x="610" y="50" width="240" height="420" rx="8" fill="#111624" stroke="#2C354D" strokeWidth="1.5" />
+                      <text x="625" y="75" fill="#A855F7" fontSize="11" fontWeight="bold">زون ۲: فنس و انبار تجهیزات دیوار شرقی</text>
+
+                      {/* CAMERA 1: Main Entrance (cam-01) */}
+                      <g className="cursor-pointer group" onClick={() => setSelectedFloorplanCam(cameras.find(c => c.id === 'cam-01') || cameras[0])}>
+                        {/* FOV Cone */}
+                        <polygon points="180,360 270,250 270,450" fill={guardState?.alarm_status === 'TRIGGERED' ? 'url(#alarmFov)' : 'url(#camFov)'} />
+                        {guardState?.alarm_status === 'TRIGGERED' && (
+                          <circle cx="180" cy="360" r="24" fill="#EF4444" opacity="0.3" className="animate-ping" />
+                        )}
+                        <circle cx="180" cy="360" r="14" fill="#181B26" stroke="#D4AF37" strokeWidth="2" />
+                        <circle cx="180" cy="360" r="6" fill="#10B981" />
+                        <text x="180" y="390" textAnchor="middle" fill="#FFFFFF" fontSize="10" fontWeight="bold">cam-01 (ورودی)</text>
+                      </g>
+
+                      {/* CAMERA 2: East Perimeter (cam-02) */}
+                      <g className="cursor-pointer group" onClick={() => setSelectedFloorplanCam(cameras.find(c => c.id === 'cam-02') || cameras[1])}>
+                        {/* FOV Cone */}
+                        <polygon points="730,160 620,240 840,240" fill="url(#camFov)" />
+                        <circle cx="730" cy="160" r="14" fill="#181B26" stroke="#D4AF37" strokeWidth="2" />
+                        <circle cx="730" cy="160" r="6" fill="#10B981" />
+                        <text x="730" y="140" textAnchor="middle" fill="#FFFFFF" fontSize="10" fontWeight="bold">cam-02 (فنس شرقی)</text>
+                      </g>
+
+                      {/* CAMERA 3: Vehicle Gate LPR (cam-03) */}
+                      <g className="cursor-pointer group" onClick={() => setSelectedFloorplanCam(cameras.find(c => c.id === 'cam-03') || cameras[2])}>
+                        {/* FOV Cone */}
+                        <polygon points="120,240 230,210 230,300" fill="url(#camFov)" />
+                        <circle cx="120" cy="240" r="14" fill="#181B26" stroke="#D4AF37" strokeWidth="2" />
+                        <circle cx="120" cy="240" r="6" fill="#10B981" />
+                        <text x="120" y="225" textAnchor="middle" fill="#FFFFFF" fontSize="10" fontWeight="bold">cam-03 (پلاک‌خوان)</text>
+                      </g>
+
+                      {/* CAMERA 4: Secure Vault (cam-04) */}
+                      <g className="cursor-pointer group" onClick={() => setSelectedFloorplanCam(cameras.find(c => c.id === 'cam-04') || cameras[3])}>
+                        {/* FOV Cone */}
+                        <polygon points="440,320 350,430 530,430" fill="url(#camFov)" />
+                        <circle cx="440" cy="320" r="14" fill="#181B26" stroke="#D4AF37" strokeWidth="2" />
+                        <circle cx="440" cy="320" r="6" fill="#10B981" />
+                        <text x="440" y="305" textAnchor="middle" fill="#FFFFFF" fontSize="10" fontWeight="bold">cam-04 (خزانه و سرور)</text>
+                      </g>
+
+                      {/* CHECKPOINT PINS */}
+                      <g className="cursor-pointer" onClick={() => handleRecordPatrol('ایستگاه ورودی گیت اصلی', user?.fullName || 'گشت حراست')}>
+                        <circle cx="160" cy="430" r="8" fill="#D4AF37" />
+                        <text x="160" y="450" textAnchor="middle" fill="#ECC665" fontSize="8" fontWeight="bold">CP-1 (گیت)</text>
+                      </g>
+                      <g className="cursor-pointer" onClick={() => handleRecordPatrol('ایستگاه انبار مرکزی و گاوصندوق', user?.fullName || 'گشت حراست')}>
+                        <circle cx="440" cy="430" r="8" fill="#D4AF37" />
+                        <text x="440" y="450" textAnchor="middle" fill="#ECC665" fontSize="8" fontWeight="bold">CP-2 (انبار)</text>
+                      </g>
+                      <g className="cursor-pointer" onClick={() => handleRecordPatrol('ایستگاه پیرامونی فنس شرقی', user?.fullName || 'گشت حراست')}>
+                        <circle cx="730" cy="360" r="8" fill="#D4AF37" />
+                        <text x="730" y="380" textAnchor="middle" fill="#ECC665" fontSize="8" fontWeight="bold">CP-3 (دیوار)</text>
+                      </g>
+                      <g className="cursor-pointer" onClick={() => handleRecordPatrol('ایستگاه مخازن فرآیندی مکران', user?.fullName || 'گشت حراست')}>
+                        <circle cx="440" cy="90" r="8" fill="#D4AF37" />
+                        <text x="440" y="70" textAnchor="middle" fill="#ECC665" fontSize="8" fontWeight="bold">CP-4 (مخازن)</text>
+                      </g>
+                    </svg>
+
+                    <div className="absolute bottom-3 right-4 bg-black/80 backdrop-blur px-3 py-1.5 rounded-xl border border-slate-800 text-[11px] text-slate-400">
+                      کلیک بر روی هر دوربین جهت بازرسی زنده و آزمایش سناریو
+                    </div>
+                  </div>
+
+                  {/* Floorplan Inspector Sidebar */}
+                  <div className="bg-[#0F1118] border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between space-y-4">
+                    <div>
+                      <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                        <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                          <Eye className="w-4 h-4 text-[#D4AF37]" />
+                          <span>بازرس دوربین انتخابی پلان</span>
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono-num">ONLINE</span>
+                      </div>
+
+                      {selectedFloorplanCam ? (
+                        <div className="mt-4 space-y-3 text-xs">
+                          <div className="bg-[#141722] p-3 rounded-xl border border-slate-800">
+                            <div className="font-bold text-white text-sm">{selectedFloorplanCam.name}</div>
+                            <div className="text-[11px] text-[#ECC665] font-mono-num mt-0.5">ID: {selectedFloorplanCam.id}</div>
+                            <div className="text-slate-400 mt-2 space-y-1">
+                              <div>زون امنیتی: <span className="text-white font-semibold">{selectedFloorplanCam.zone}</span></div>
+                              <div>پروتکل ارتباطی: <span className="text-white font-mono-num">{selectedFloorplanCam.protocol}</span></div>
+                              <div>آدرس استریم: <span className="text-slate-300 font-mono-num text-[10px]">{selectedFloorplanCam.stream_url}</span></div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#141722] border border-slate-800">
+                            <span className="text-slate-400">وضعیت استریم WebRTC:</span>
+                            <span className={`font-bold font-mono-num ${activeLiveStreams[selectedFloorplanCam.id] ? 'text-emerald-400' : 'text-slate-400'}`}>
+                              {activeLiveStreams[selectedFloorplanCam.id] ? 'درحال پخش زنده' : 'آماده به کار'}
+                            </span>
+                          </div>
+
+                          <button
+                            onClick={() => toggleLiveStream(selectedFloorplanCam)}
+                            className={`w-full py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                              activeLiveStreams[selectedFloorplanCam.id]
+                                ? 'bg-red-600 hover:bg-red-500 text-white'
+                                : 'bg-[#D4AF37] hover:bg-[#ECC665] text-black shadow'
+                            }`}
+                          >
+                            {activeLiveStreams[selectedFloorplanCam.id] ? <Square className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                            <span>{activeLiveStreams[selectedFloorplanCam.id] ? 'قطع استریم زنده' : 'مشاهده زنده On-Demand'}</span>
+                          </button>
+
+                          <button
+                            onClick={() => triggerAISimulation('human_detected')}
+                            className="w-full py-2 rounded-xl bg-[#181B26] hover:bg-[#222736] border border-slate-700 text-slate-200 text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                          >
+                            <Sparkles className="w-4 h-4 text-amber-400" />
+                            <span>شبیه‌سازی نفوذ در این دوربین</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="mt-8 text-center text-slate-500 py-6">
+                          <Eye className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                          <p className="text-xs">جهت بررسی مشخصات، روی یکی از دوربین‌ها در نقشه کلیک کنید.</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Quick Facility Relays on Floorplan */}
+                    <div className="pt-3 border-t border-slate-800 space-y-2">
+                      <span className="text-slate-400 text-[11px] font-bold block">رله‌های اضطراری در نقشه:</span>
+                      <div className="grid grid-cols-2 gap-2 text-[11px]">
+                        <button
+                          onClick={() => {
+                            const dev = facilities.find(f => f.type === 'GATE') || facilities[0];
+                            if (dev) handleToggleFacility(dev);
+                          }}
+                          className="p-2 rounded-xl bg-[#141722] hover:bg-slate-800 border border-slate-800 text-slate-200 text-right"
+                        >
+                          <div className="font-bold text-[#ECC665]">گیت تردد خودرو</div>
+                          <div className="text-[10px] text-slate-400">سوئیچ رله بازو</div>
+                        </button>
+                        <button
+                          onClick={() => {
+                            const dev = facilities.find(f => f.type === 'LIGHT') || facilities[0];
+                            if (dev) handleToggleFacility(dev);
+                          }}
+                          className="p-2 rounded-xl bg-[#141722] hover:bg-slate-800 border border-slate-800 text-slate-200 text-right"
+                        >
+                          <div className="font-bold text-[#ECC665]">پروژکتور پیرامونی</div>
+                          <div className="text-[10px] text-slate-400">روشنایی زون فنس</div>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SUBVIEW 3: ADVANCED ANALYTICS & THREAT INTELLIGENCE */}
+            {monitorSubView === 'analytics' && (
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-[#D4AF37]" />
+                      <span>داشبورد تحلیلی و ترافیک تهدیدات مکران گارد (Intelligence & Bandwidth Analytics)</span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      پایش آماری وقایع امنیتی، تحلیل کارایی پهنای باند و سرعت واکنش گشت‌های حراست در منطقه مکران.
+                    </p>
+                  </div>
+                  <div className="text-xs text-emerald-400 font-bold bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/30">
+                    صرفه‌جویی پهنای باند: ۹۷.۱٪
+                  </div>
+                </div>
+
+                {/* 24-Hour Intrusion Distribution Chart */}
+                <div className="bg-[#0F1118] border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <span className="text-xs font-bold text-white">توزیع زمانی وقایع و نفوذ در ۲۴ ساعت شبانه‌روز (ساعات اوج خطر)</span>
+                    <span className="text-[11px] text-slate-400 font-mono-num">بیشترین هشدار: ۰۱:۰۰ الی ۰۴:۰۰ بامداد</span>
+                  </div>
+
+                  <div className="h-44 flex items-end gap-1.5 pt-6 px-2 overflow-x-auto">
+                    {[
+                      { hour: '00', val: 35 }, { hour: '01', val: 75 }, { hour: '02', val: 95 },
+                      { hour: '03', val: 85 }, { hour: '04', val: 60 }, { hour: '05', val: 30 },
+                      { hour: '06', val: 15 }, { hour: '07', val: 10 }, { hour: '08', val: 8 },
+                      { hour: '09', val: 5 }, { hour: '10', val: 4 }, { hour: '11', val: 6 },
+                      { hour: '12', val: 10 }, { hour: '13', val: 12 }, { hour: '14', val: 8 },
+                      { hour: '15', val: 6 }, { hour: '16', val: 14 }, { hour: '17', val: 20 },
+                      { hour: '18', val: 25 }, { hour: '19', val: 40 }, { hour: '20', val: 45 },
+                      { hour: '21', val: 50 }, { hour: '22', val: 65 }, { hour: '23', val: 55 }
+                    ].map(item => (
+                      <div key={item.hour} className="flex-1 flex flex-col items-center gap-1 min-w-[20px] group">
+                        <div
+                          style={{ height: `${item.val}%` }}
+                          className={`w-full rounded-t transition-all group-hover:brightness-125 ${
+                            item.val > 60
+                              ? 'bg-gradient-to-t from-red-600 to-red-400'
+                              : item.val > 30
+                              ? 'bg-gradient-to-t from-amber-600 to-amber-400'
+                              : 'bg-gradient-to-t from-[#D4AF37]/50 to-[#ECC665]'
+                          }`}
+                        ></div>
+                        <span className="text-[9px] text-slate-500 font-mono-num">{item.hour}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3 Analytics Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                  {/* AI Detection Breakdown */}
+                  <div className="bg-[#0F1118] border border-slate-800 rounded-2xl p-5 shadow-xl space-y-3">
+                    <div className="font-bold text-white flex items-center gap-2 pb-2 border-b border-slate-800">
+                      <Cpu className="w-4 h-4 text-[#D4AF37]" />
+                      <span>تفکیک رده‌های تشخیص هوش مصنوعی</span>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-400">تشخیص انسان (Human):</span>
+                        <span className="font-bold text-white font-mono-num">84.2%</span>
+                      </div>
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-[#D4AF37] h-full" style={{ width: '84.2%' }}></div>
+                      </div>
+
+                      <div className="flex justify-between items-center pt-1">
+                        <span className="text-slate-400">چهره ناشناس (Unknown Face):</span>
+                        <span className="font-bold text-amber-400 font-mono-num">9.5%</span>
+                      </div>
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-amber-400 h-full" style={{ width: '9.5%' }}></div>
+                      </div>
+
+                      <div className="flex justify-between items-center pt-1">
+                        <span className="text-slate-400">طبقه‌بندی خودروها (Vehicles):</span>
+                        <span className="font-bold text-blue-400 font-mono-num">4.7%</span>
+                      </div>
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-blue-400 h-full" style={{ width: '4.7%' }}></div>
+                      </div>
+
+                      <div className="flex justify-between items-center pt-1">
+                        <span className="text-slate-400">پلاک‌های تحت تعقیب (LPR):</span>
+                        <span className="font-bold text-red-400 font-mono-num">1.6%</span>
+                      </div>
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-red-400 h-full" style={{ width: '1.6%' }}></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bandwidth Savings (Edge vs Continuous Stream) */}
+                  <div className="bg-[#0F1118] border border-slate-800 rounded-2xl p-5 shadow-xl space-y-3">
+                    <div className="font-bold text-white flex items-center gap-2 pb-2 border-b border-slate-800">
+                      <Zap className="w-4 h-4 text-emerald-400" />
+                      <span>صرفه‌جویی پهنای باند و هزینه‌های اینترنت</span>
+                    </div>
+                    <div className="space-y-2.5">
+                      <div className="bg-[#141722] p-2.5 rounded-xl border border-slate-800">
+                        <div className="text-slate-400 text-[11px]">استریم پیوسته سنتی (Continuous Cloud):</div>
+                        <div className="text-sm font-bold font-mono-num text-red-400 mt-0.5">14.4 GB / ساعت (~10.3 TB / ماه)</div>
+                      </div>
+
+                      <div className="bg-[#141722] p-2.5 rounded-xl border border-emerald-500/30">
+                        <div className="text-emerald-400 text-[11px]">معماری مکران وان (On-Demand WebRTC):</div>
+                        <div className="text-sm font-bold font-mono-num text-emerald-300 mt-0.5">0.42 GB / ساعت (~0.3 TB / ماه)</div>
+                      </div>
+
+                      <div className="text-[11px] text-slate-400 leading-relaxed pt-1">
+                        با ارسال تصاویر اسنپ‌شات در هنگام رویداد و استریم ویدیویی صرفاً با درخواست اپراتور، تا <span className="text-emerald-400 font-bold">۹۷.۱٪</span> در مصرف حجم اینترنت صرفه‌جویی گردیده است.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Guard Response Times (SLA) */}
+                  <div className="bg-[#0F1118] border border-slate-800 rounded-2xl p-5 shadow-xl space-y-3">
+                    <div className="font-bold text-white flex items-center gap-2 pb-2 border-b border-slate-800">
+                      <ShieldCheck className="w-4 h-4 text-[#D4AF37]" />
+                      <span>شاخص‌های عملکرد حراست (Guard SLA)</span>
+                    </div>
+                    <div className="space-y-3">
+                      <div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">میانگین زمان اعزام گشت:</span>
+                          <span className="font-bold text-[#ECC665] font-mono-num">2.1 دقیقه</span>
+                        </div>
+                        <div className="text-[10px] text-emerald-400 mt-0.5">۵۸ ثانیه سریع‌تر از حد مجاز</div>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">نرخ رفع قطعی حوادث:</span>
+                          <span className="font-bold text-emerald-400 font-mono-num">100%</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">مختومه شدن تمامی تیکت‌های اعزام</div>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">پایداری ارتباط مینی‌پی‌سی با ابر:</span>
+                          <span className="font-bold text-emerald-400 font-mono-num">99.98%</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">اتصال مداوم وب‌سوکت خروجی بدون قطعی</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* SERVER-SIDE AI THREAT PIPELINE DEMONSTRATOR */}
             <div className="bg-[#0F1118] border border-slate-800 rounded-2xl p-6 shadow-xl">
@@ -4080,6 +4532,93 @@ export function App() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* VOICE BROADCAST / INTERCOM MODAL */}
+        {showVoiceModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="bg-[#121520] border border-amber-500/50 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Megaphone className="w-5 h-5 text-amber-400" />
+                  <span className="font-bold text-sm text-white">سامانه پیجینگ صوتی و هشدار اضطراری (Voice PA & Intercom)</span>
+                </div>
+                <button onClick={() => setShowVoiceModal(false)} className="text-slate-400 hover:text-white">✕</button>
+              </div>
+
+              <div className="text-xs text-slate-400">
+                پیام صوتی مستقیماً از طریق کارت صدای مینی‌پی‌سی گیت‌وی به آمپلی‌فایر و بلندگوهای محوطه ارسال و پخش می‌شود.
+              </div>
+
+              {/* Quick Deterrence Presets */}
+              <div className="space-y-1.5">
+                <span className="text-slate-400 text-xs font-bold block">پیام‌های پیش‌فرض بازدارنده:</span>
+                <div className="grid grid-cols-1 gap-1.5">
+                  {[
+                    'هشدار امنیتی سیستم مکران گارد: شما در منطقه ممنوعه قرار دارید. سریعاً محوطه را ترک فرمایید.',
+                    'توجه! ورود غیرمجاز توسط هوش مصنوعی مکران ثبت گردید. گشت حراست در حال عزیمت به محل است.',
+                    'هشدار حراست: کلیه درب‌ها و گیت‌های خروجی در وضعیت قفل امنیتی قرار گرفتند.'
+                  ].map((preset, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setVoiceMessageText(preset)}
+                      className="p-2 rounded-lg bg-[#181B26] hover:bg-[#1F2434] border border-slate-800 text-slate-300 text-[11px] text-right transition"
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <form onSubmit={handleBroadcastVoice} className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-slate-400 mb-1">متن اعلان صوتی اختصاصی</label>
+                  <textarea
+                    rows={2}
+                    value={voiceMessageText}
+                    onChange={e => setVoiceMessageText(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-400 mb-1">زون بلندگوها</label>
+                    <select
+                      value={voiceZone}
+                      onChange={e => setVoiceZone(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-[#181B26] border border-slate-700 text-white"
+                    >
+                      <option value="all">کلیه بلندگوهای سایت (All Zones)</option>
+                      <option value="entrance">بلندگوی گیت ورودی (Entrance)</option>
+                      <option value="perimeter">بلندگوی فنس پیرامونی (Perimeter)</option>
+                      <option value="vault">بلندگوی انبار و خزانه (Vault)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 mb-1">گیت‌وی مینی‌پی‌سی</label>
+                    <input
+                      type="text"
+                      disabled
+                      value={primaryAgent?.name || 'مینی پی‌سی گیت‌وی ۱'}
+                      className="w-full px-3 py-2 rounded-xl bg-[#10121B] border border-slate-800 text-slate-400 font-mono-num"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                  <button type="button" onClick={() => setShowVoiceModal(false)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300">انصراف</button>
+                  <button type="submit" className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold flex items-center gap-1.5 shadow">
+                    <Volume2 className="w-4 h-4" />
+                    <span>مخابره فوری صوت به سایت</span>
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

@@ -76,6 +76,7 @@ export type AgentCommandType =
   | 'capture_snapshot' 
   | 'discover_cameras'
   | 'ptz_command'
+  | 'voice_broadcast'
   | 'reboot' 
   | 'update_config' 
   | 'webrtc_start' 

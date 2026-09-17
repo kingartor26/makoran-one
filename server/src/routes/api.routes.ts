@@ -281,6 +281,24 @@ apiRouter.post('/agents/:id/command', (req: AuthenticatedRequest, res) => {
   res.json({ success: dispatched });
 });
 
+// Voice Warning & Audio PA Broadcast to Mini PC Speaker
+apiRouter.post('/agents/:id/broadcast', (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  const { message, zone, volume } = req.body;
+
+  const dispatched = agentService.sendCommand(id, {
+    command: 'voice_broadcast',
+    parameters: {
+      message: message || 'هشدار امنیتی سیستم مکران گارد: لطفاً سریعاً منطقه را ترک نمایید.',
+      zone: zone || 'all',
+      volume: volume || 85
+    },
+    issued_at: new Date().toISOString()
+  });
+
+  res.json({ success: dispatched, message, zone });
+});
+
 // --- CAMERAS ---
 apiRouter.get('/cameras', (req: AuthenticatedRequest, res) => {
   const cameras = dbService.query('SELECT * FROM cameras WHERE tenant_id = ? ORDER BY created_at DESC', [req.tenantId]);
