@@ -14,7 +14,7 @@
     "dev:agent": "npm run dev --workspace=agent",
     "dev:client": "npm run dev --workspace=client",
     "build": "npm run build --workspaces --if-present",
-    "test": "node tests/vertical-slice.test.mjs"
+    "test": "node tests/vertical-slice.test.mjs && node tests/multi-tenancy.test.mjs && node tests/ai-priority.test.mjs && node tests/rule-engine.test.mjs"
   },
   "keywords": [
     "makoran",

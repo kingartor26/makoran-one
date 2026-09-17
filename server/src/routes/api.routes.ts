@@ -54,6 +54,129 @@ apiRouter.get('/auth/me', (req: AuthenticatedRequest, res) => {
   res.json({ user, tenant });
 });
 
+// Switch Active Tenant (for Superadmins or multi-tenant operators)
+apiRouter.post('/auth/switch-tenant', (req: AuthenticatedRequest, res) => {
+  const { tenant_id } = req.body;
+  const targetTenant = dbService.queryOne('SELECT * FROM tenants WHERE id = ? AND status = ?', [tenant_id, 'ACTIVE']);
+  if (!targetTenant) {
+    res.status(404).json({ error: 'مستأجر / سازمان مورد نظر یافت نشد' });
+    return;
+  }
+
+  // Issue new token with updated tenant context
+  const newToken = authService.generateToken({
+    userId: req.user!.userId,
+    tenantId: targetTenant.id,
+    email: req.user!.email,
+    role: req.user!.role,
+    fullName: req.user!.fullName
+  });
+
+  // Log audit
+  dbService.run(
+    'INSERT INTO audit_logs (id, tenant_id, user_id, action, resource, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ['aud-' + Date.now(), targetTenant.id, req.user!.userId, 'SWITCH_TENANT', 'TENANT', JSON.stringify({ targetTenant: targetTenant.name }), new Date().toISOString()]
+  );
+
+  res.json({
+    token: newToken,
+    tenant: targetTenant,
+    user: {
+      ...req.user,
+      tenantId: targetTenant.id,
+      tenantName: targetTenant.name
+    }
+  });
+});
+
+// List All Tenants (SuperAdmin)
+apiRouter.get('/tenants', (req: AuthenticatedRequest, res) => {
+  const tenants = dbService.query('SELECT * FROM tenants ORDER BY created_at DESC');
+  res.json(tenants);
+});
+
+// Create New Tenant Organization
+apiRouter.post('/tenants', roleGuard(['SUPERADMIN']), (req: AuthenticatedRequest, res) => {
+  const { name, slug, plan } = req.body;
+  const id = 'tenant-' + (slug || uuidv4().substring(0, 8));
+  const now = new Date().toISOString();
+
+  dbService.run(`
+    INSERT INTO tenants (id, name, slug, plan, status, created_at)
+    VALUES (?, ?, ?, ?, 'ACTIVE', ?)
+  `, [id, name, slug || id, plan || 'ENTERPRISE', now]);
+
+  // Initialize Guard State for new tenant
+  dbService.run(`
+    INSERT INTO guard_state (tenant_id, armed_state, alarm_status, last_state_change, siren_active, relay_active)
+    VALUES (?, 'ARMED_AWAY', 'RESOLVED', ?, 0, 0)
+  `, [id, now]);
+
+  // Create default subscription
+  dbService.run(`
+    INSERT INTO subscriptions (id, tenant_id, plan_name, price_monthly, max_cameras, max_agents, retention_days, ai_enabled, status, next_billing_date, created_at)
+    VALUES (?, ?, ?, 45000000, 16, 4, 30, 1, 'ACTIVE', '2026-10-17', ?)
+  `, ['sub-' + uuidv4().substring(0, 8), id, plan || 'Enterprise Guard', now]);
+
+  res.json({ id, success: true });
+});
+
+// --- AUDIT LOGS EXPLORER ---
+apiRouter.get('/audit-logs', (req: AuthenticatedRequest, res) => {
+  const { search, action, limit } = req.query;
+  const maxLimit = parseInt(limit as string) || 50;
+
+  let query = 'SELECT * FROM audit_logs WHERE tenant_id = ?';
+  const params: any[] = [req.tenantId];
+
+  if (action) {
+    query += ' AND action = ?';
+    params.push(action);
+  }
+
+  if (search) {
+    query += ' AND (details LIKE ? OR resource LIKE ?)';
+    params.push(`%${search}%`, `%${search}%`);
+  }
+
+  query += ' ORDER BY created_at DESC LIMIT ?';
+  params.push(maxLimit);
+
+  const logs = dbService.query(query, params);
+  res.json(logs);
+});
+
+// --- BIOMETRIC FACE TIMELINE SEARCH ---
+apiRouter.post('/faces/search', (req: AuthenticatedRequest, res) => {
+  const { person_name, person_id } = req.body;
+  const sightings = dbService.query(`
+    SELECT e.*, c.name as camera_name, c.zone
+    FROM events e
+    LEFT JOIN cameras c ON e.camera_id = c.id
+    WHERE e.tenant_id = ? AND (e.label LIKE ? OR e.details LIKE ?)
+    ORDER BY e.created_at DESC
+    LIMIT 30
+  `, [req.tenantId, `%${person_name || ''}%`, `%${person_id || ''}%`]);
+
+  res.json(sightings);
+});
+
+// --- LPR VEHICLE PASSAGE TIMELINE SEARCH ---
+apiRouter.get('/plates/search', (req: AuthenticatedRequest, res) => {
+  const plateQuery = req.query.q as string || '';
+  const passages = dbService.query(`
+    SELECT e.*, c.name as camera_name, c.zone
+    FROM events e
+    LEFT JOIN cameras c ON e.camera_id = c.id
+    WHERE e.tenant_id = ? AND e.event_type IN ('license_plate', 'blocked_plate') AND (e.label LIKE ? OR e.details LIKE ?)
+    ORDER BY e.created_at DESC
+    LIMIT 30
+  `, [req.tenantId, `%${plateQuery}%`, `%${plateQuery}%`]);
+
+  res.json(passages);
+});
+
+
 // --- GUARD SECURITY SYSTEM STATE ---
 apiRouter.get('/guard/state', (req: AuthenticatedRequest, res) => {
   const state = dbService.queryOne('SELECT * FROM guard_state WHERE tenant_id = ?', [req.tenantId]);

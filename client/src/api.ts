@@ -62,6 +62,42 @@ export class ApiClient {
     return this.request('/auth/me');
   }
 
+  // Multi-Tenancy
+  async getTenants() {
+    return this.request('/tenants');
+  }
+
+  async switchTenant(tenant_id: string) {
+    const res = await this.request('/auth/switch-tenant', {
+      method: 'POST',
+      body: JSON.stringify({ tenant_id })
+    });
+    if (res.token) {
+      this.setToken(res.token);
+    }
+    return res;
+  }
+
+  // Audit Logs
+  async getAuditLogs(search = '', action = '') {
+    let url = '/audit-logs?limit=50';
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (action) url += `&action=${encodeURIComponent(action)}`;
+    return this.request(url);
+  }
+
+  // Face & Plate Searches
+  async searchFaceSightings(person_name: string) {
+    return this.request('/faces/search', {
+      method: 'POST',
+      body: JSON.stringify({ person_name })
+    });
+  }
+
+  async searchPlateTimeline(q: string) {
+    return this.request(`/plates/search?q=${encodeURIComponent(q)}`);
+  }
+
   // Guard State
   async getGuardState() {
     return this.request('/guard/state');

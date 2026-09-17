@@ -41,6 +41,10 @@ export function App() {
   const [facilities, setFacilities] = useState<FacilityItem[]>([]);
   const [products, setProducts] = useState<ShopProductItem[]>([]);
   const [orders, setOrders] = useState<ShopOrderItem[]>([]);
+  const [tenantsList, setTenantsList] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [searchPersonName, setSearchPersonName] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Live View WebRTC Sessions (Camera ID -> Session ID)
@@ -122,7 +126,7 @@ export function App() {
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const [gRes, camRes, agRes, evRes, alRes, rRes, fRes, pRes, crmRes, attRes, facRes, prodRes, ordRes] = await Promise.all([
+      const [gRes, camRes, agRes, evRes, alRes, rRes, fRes, pRes, crmRes, attRes, facRes, prodRes, ordRes, tRes, audRes] = await Promise.all([
         api.getGuardState(),
         api.getCameras(),
         api.getAgents(),
@@ -135,7 +139,9 @@ export function App() {
         api.getAttendance(),
         api.getFacilities(),
         api.getShopProducts(),
-        api.getShopOrders()
+        api.getShopOrders(),
+        api.getTenants().catch(() => []),
+        api.getAuditLogs().catch(() => [])
       ]);
       setGuardState(gRes);
       setCameras(camRes);
@@ -150,6 +156,8 @@ export function App() {
       setFacilities(facRes);
       setProducts(prodRes);
       setOrders(ordRes);
+      setTenantsList(tRes);
+      setAuditLogs(audRes);
     } catch (err) {
       console.error('Failed to load data:', err);
     } finally {
@@ -362,6 +370,31 @@ export function App() {
     }
   };
 
+  // Switch Tenant
+  const handleSwitchTenant = async (tenantId: string) => {
+    try {
+      const res = await api.switchTenant(tenantId);
+      setUser(res.user);
+      showToast(`سازمان فعال به «${res.tenant.name}» تغییر یافت`, 'success');
+      loadAllData();
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Search Face Sightings
+  const handleSearchFace = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchPersonName) return;
+    try {
+      const results = await api.searchFaceSightings(searchPersonName);
+      setSearchResults(results);
+      showToast(`${results.length} رخداد تردد برای «${searchPersonName}» یافت شد`, 'info');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
   // PTZ Control
   const handlePTZ = async (cameraId: string, action: string) => {
     try {
@@ -513,8 +546,20 @@ export function App() {
                   MAKORAN GUARD
                 </span>
               </div>
-              <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
-                <span>{user.tenantName}</span>
+              <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5 mt-0.5">
+                {tenantsList.length > 1 ? (
+                  <select
+                    value={user.tenantId}
+                    onChange={e => handleSwitchTenant(e.target.value)}
+                    className="bg-[#141724] text-xs font-semibold text-[#FFE082] border border-[#D4AF37]/40 rounded-lg px-2 py-0.5 outline-none cursor-pointer hover:border-[#D4AF37]"
+                  >
+                    {tenantsList.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span>{user.tenantName}</span>
+                )}
                 <span className="text-slate-600">•</span>
                 <span className="text-emerald-400 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -1676,6 +1721,66 @@ export function App() {
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* AUDIT LOGS & SECURITY AUDIT EXPLORER */}
+            <div className="space-y-4 pt-4 border-t border-slate-800">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-[#D4AF37]" />
+                    <span>لاگ‌های حسابرسی امنیتی و انطباق حراست (Security Audit Logs)</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    بایگانی غیرقابل‌دستکاری از تمامی ورودها، تغییر وضعیت گارد، سوئیچ رله‌ها و ارتقاهای OTA.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(auditLogs, null, 2));
+                    const dl = document.createElement('a');
+                    dl.setAttribute("href", dataStr);
+                    dl.setAttribute("download", `makoran_audit_logs_${Date.now()}.json`);
+                    dl.click();
+                    showToast('فایل گزارش حسابرسی امنیتی صادر گردید', 'success');
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-[#141722] hover:bg-[#1A1F2E] border border-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-1.5 transition"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>خروجی JSON</span>
+                </button>
+              </div>
+
+              <div className="bg-[#0F1118] border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-[#141722] text-slate-400 border-b border-slate-800">
+                    <tr>
+                      <th className="p-3.5">عنوان عملیات</th>
+                      <th className="p-3.5">بخش / منبع</th>
+                      <th className="p-3.5">جزئیات عملیات</th>
+                      <th className="p-3.5 text-left">زمان و تاریخ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/80 font-mono-num">
+                    {auditLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="p-4 text-center text-slate-500 font-sans">هیچ لاگ حسابرسی ثبت نشده است</td>
+                      </tr>
+                    ) : (
+                      auditLogs.map(log => (
+                        <tr key={log.id} className="hover:bg-[#131622] transition">
+                          <td className="p-3.5 font-bold text-[#ECC665]">{log.action}</td>
+                          <td className="p-3.5 text-slate-300">{log.resource}</td>
+                          <td className="p-3.5 text-slate-400 text-[11px] truncate max-w-xs">{log.details || '-'}</td>
+                          <td className="p-3.5 text-left text-slate-400 text-[11px]">
+                            {new Date(log.created_at).toLocaleString('fa-IR')}
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>

@@ -381,11 +381,22 @@ export class DatabaseService {
     console.log('[DB] Seeding default initial data for Makoran One & Makoran Guard...');
     const now = new Date().toISOString();
 
-    // 1. Default Tenant
+    // 1. Default Tenants
     this.run(`
       INSERT INTO tenants (id, name, slug, plan, status, created_at)
       VALUES (?, ?, ?, ?, ?, ?)
     `, ['tenant-makoran-01', 'مکران گارد سنترال (Makoran Central Guard)', 'makoran-central', 'ENTERPRISE', 'ACTIVE', now]);
+
+    this.run(`
+      INSERT INTO tenants (id, name, slug, plan, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, ['tenant-makoran-02', 'پروژه بنادر و گمرک شهید بهشتی چابهار (Chabahar Port Security)', 'chabahar-port', 'ENTERPRISE', 'ACTIVE', now]);
+
+    // Initialize Guard State for Port Tenant
+    this.run(`
+      INSERT INTO guard_state (tenant_id, armed_state, alarm_status, last_armed_by, last_state_change, siren_active, relay_active)
+      VALUES (?, 'ARMED_AWAY', 'RESOLVED', 'usr-admin-01', ?, 0, 0)
+    `, ['tenant-makoran-02', now]);
 
     // 2. Default SuperAdmin and Operator Users
     const salt = bcrypt.genSaltSync(10);
