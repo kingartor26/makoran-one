@@ -9,4 +9,6 @@ uploads/*
 server/uploads/*
 !server/uploads/.gitkeep
 server/data/*.db
+makoran-one-platform.zip
+
 

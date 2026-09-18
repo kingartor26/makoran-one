@@ -30,6 +30,16 @@ async function bootstrap() {
   app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
   app.use('/assets', express.static(path.resolve(__dirname, '../../assets')));
 
+  // Direct Download for Project Source Code Archive
+  app.get('/download/makoran-one-platform.zip', (req, res) => {
+    const zipPath = path.resolve(__dirname, '../../makoran-one-platform.zip');
+    if (fs.existsSync(zipPath)) {
+      res.download(zipPath, 'makoran-one-platform.zip');
+    } else {
+      res.status(404).send('فایل فشرده یافت نشد');
+    }
+  });
+
   // REST API v1
   app.use('/api/v1', apiRouter);
 

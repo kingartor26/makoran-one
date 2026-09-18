@@ -1115,6 +1115,16 @@ export function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            <a
+              href="/download/makoran-one-platform.zip"
+              download="makoran-one-platform.zip"
+              title="دانلود بسته کامل سورس‌کد پلتفرم مکران وان (ZIP Archive)"
+              className="px-2.5 py-1.5 rounded-xl border border-[#D4AF37]/50 bg-[#171A24] hover:bg-[#D4AF37] hover:text-black text-[#ECC665] transition flex items-center gap-1.5 text-xs font-bold shadow"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">دانلود ZIP سورس‌کد</span>
+            </a>
+
             <button
               onClick={() => {
                 setAudioEnabled(!audioEnabled);
